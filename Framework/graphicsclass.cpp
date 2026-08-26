@@ -242,15 +242,20 @@ bool GraphicsClass::Frame(int mouseDX, int mouseDY)
     }
     prevRKeyDown = currRKeyDown;
 
-    // 4. [마우스 좌클릭]: 건초 던지기 발사
+    // 4. [F] 키 또는 [마우스 좌클릭]: 건초 던지기 발사
+    static bool prevFKeyDown = false;
     static bool prevLButtonDown = false;
+    bool currFKeyDown = (GetAsyncKeyState('F') & 0x8000) != 0;
     bool currLButtonDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
 
-    if (currLButtonDown && !prevLButtonDown && m_questSystem.CanShoot() && !m_isCursorLocked)
+    bool isShootTriggered = (currFKeyDown && !prevFKeyDown) || (currLButtonDown && !prevLButtonDown);
+
+    if (isShootTriggered && m_questSystem.CanShoot())
     {
         m_projectileSystem.Spawn(camPos, m_playerController.GetForward());
         m_questSystem.ConsumeAmmo();
     }
+    prevFKeyDown = currFKeyDown;
     prevLButtonDown = currLButtonDown;
 
     // 5. 투사체 이동 및 퀘스트(동물 피격) 업데이트
@@ -774,8 +779,8 @@ bool GraphicsClass::RenderTitle()
 
         m_Text->SetTitleVisible(true);
         m_Text->SetTitleLine(0, "Farm simulator", dc);
-        m_Text->SetTitleLine(1, "Goal : Pick hay and throw to pig", dc);
-        m_Text->SetTitleLine(2, "Control : WASD move, Mouse rotate, Mouse left click = Shoot hay", dc);
+        m_Text->SetTitleLine(1, "Goal : Feed hungry farm animals with hay", dc);
+        m_Text->SetTitleLine(2, "Control : WASD Move, Mouse Look, [F / Click] Shoot, [E] Feed, [R] Reset", dc);
         m_Text->SetTitleLine(3, "Developer : C093199 Jae Wook-Lee", dc);
         m_Text->SetTitleLine(4, "[Enter] Start  [Esc] Exit", dc);
 
@@ -922,7 +927,7 @@ void GraphicsClass::RenderQuestHUD()
         }
 
         ImGui::Spacing();
-        ImGui::TextDisabled(u8"[좌클릭: 던지기]  [E: 먹이기]  [R: 리셋]  [Tab/F1: 마우스 해제]");
+        ImGui::TextDisabled(u8"[F / 좌클릭: 던지기]  [E: 먹이기]  [R: 리셋]  [Tab/F1: 디버그 패널]");
     }
     ImGui::End();
 
