@@ -6,12 +6,11 @@
 
 #include "textureclass.h"
 
-// Assimp Çì´õ °æ·Î´Â ³× ÇÁ·ÎÁ§Æ® ±¸Á¶¿¡ ¸ÂÃç¼­
+// Assimp í—¤ë”
 #include "include/assimp/Importer.hpp"
 #include "include/assimp/scene.h"
 #include "include/assimp/postprocess.h"
 
-// ¶óÀÌºê·¯¸®´Â ½ÇÁ¦ °¡Áö°í ÀÖ´Â ÆÄÀÏ ÀÌ¸§¿¡ ¸Â°Ô ¼öÁ¤
 #pragma comment(lib, "lib/assimp-vc140-mt.lib")
 
 using namespace DirectX;
@@ -27,16 +26,14 @@ public:
         const wchar_t* textureFilename);
     void Shutdown();
 
-    // ±âÁ¸: ´ÜÀÏ ¸ğµ¨ ·»´õ
+    // ê¸°ì¡´: ë‹¨ì¼ ëª¨ë¸ ë Œë”
     void Render(ID3D11DeviceContext* deviceContext);
 
-    // ====== ¡Ú ÀÎ½ºÅÏ½Ì¿ë Ãß°¡ API ======
-    // instancePositions: °¢ ÀÎ½ºÅÏ½ºÀÇ ¿ùµå »ó À§Ä¡ (worldMatrix ÀÌÀü¿¡ ´õÇØÁÙ translation)
+    // ====== ì¸ìŠ¤í„´ì‹±ìš© ì¶”ê°€ API ======
     bool InitializeInstanceBuffer(
         ID3D11Device* device,
         const std::vector<XMFLOAT3>& instancePositions);
 
-    // ÀÎ½ºÅÏ½º ·»´õ (HLSL¿¡¼­ instancePos : INSTANCEPOS »ç¿ë)
     void RenderInstanced(ID3D11DeviceContext* deviceContext);
 
     int  GetIndexCount() const { return m_indexCount; }
@@ -55,7 +52,6 @@ private:
         XMFLOAT3 normal;
     };
 
-    // ¡Ú HLSL ÀÇ float3 instancePos : INSTANCEPOS ¿Í 1:1 ´ëÀÀ
     struct InstanceType
     {
         XMFLOAT3 instancePos;
@@ -65,7 +61,6 @@ private:
     void ShutdownBuffers();
     void RenderBuffers(ID3D11DeviceContext* deviceContext);
 
-    // ¡Ú ÀÎ½ºÅÏ½º ¹öÆÛ¿ë ³»ºÎ ·»´õ
     void RenderInstanceBuffers(ID3D11DeviceContext* deviceContext);
 
     bool LoadTexture(ID3D11Device* device, const wchar_t* filename);
@@ -77,7 +72,7 @@ private:
     int           m_vertexCount = 0;
     int           m_indexCount = 0;
 
-    // ¡Ú ÀÎ½ºÅÏ½Ì¿ë ¸â¹ö
+    // ì¸ìŠ¤í„´ì‹±ìš©
     ID3D11Buffer* m_instanceBuffer = nullptr;
     int           m_instanceCount = 0;
 

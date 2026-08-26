@@ -91,6 +91,16 @@ private:
         float shadowIntensity;
     };
 
+    // HLSL: FogBuffer (거리 기반 대기 안개)
+    struct FogBufferType
+    {
+        XMFLOAT4 fogColor;
+        float fogStart;
+        float fogEnd;
+        int enableFog;
+        float _fogPadding;
+    };
+
 public:
     LightShaderClass();
     LightShaderClass(const LightShaderClass&);
@@ -136,7 +146,12 @@ public:
         float shadowBias = 0.0015f,
         float shadowIntensity = 0.85f,
         bool enableShadow = true,
-        bool enablePCF = true);
+        bool enablePCF = true,
+        // Distance Fog (대기 거리 안개)
+        XMFLOAT4 fogColor = XMFLOAT4(0.72f, 0.76f, 0.85f, 1.0f),
+        float fogStart = 15.0f,
+        float fogEnd = 75.0f,
+        bool enableFog = true);
 
 private:
     bool InitializeShader(ID3D11Device*, HWND, const WCHAR* hlslFile);
@@ -181,7 +196,12 @@ private:
         float shadowBias,
         float shadowIntensity,
         bool enableShadow,
-        bool enablePCF);
+        bool enablePCF,
+        // Distance Fog (대기 거리 안개)
+        XMFLOAT4 fogColor,
+        float fogStart,
+        float fogEnd,
+        bool enableFog);
 
     void RenderShader(ID3D11DeviceContext*, int);
 
@@ -200,6 +220,7 @@ private:
     ID3D11Buffer* m_attenuationBuffer = nullptr;
     ID3D11Buffer* m_toggleBuffer = nullptr;
     ID3D11Buffer* m_shadowBuffer = nullptr;
+    ID3D11Buffer* m_fogBuffer = nullptr;
 };
 
 #endif // _LIGHTSHADERCLASS_H_

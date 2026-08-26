@@ -58,6 +58,15 @@ cbuffer ShadowBuffer : register(b7)
     float shadowIntensity; // 그림자 농도 (0.0: 그림자 없음 ~ 1.0: 완전 어두움)
 };
 
+cbuffer FogBuffer : register(b8)
+{
+    float4 fogColor;       // 안개 색상 (하늘/대기 색)
+    float fogStart;        // 안개 시작 거리
+    float fogEnd;          // 안개 끝 거리
+    int enableFog;         // 안개 ON/OFF
+    float _fogPadding;
+};
+
 Texture2D AlbedoMap : register(t0);
 Texture2D MetallicMap : register(t1);
 Texture2D RoughnessMap : register(t2);
@@ -257,6 +266,14 @@ float4 LightPixelShader(PixelInputType input) : SV_TARGET
     float3 lit = colorAccum + pDiff;
     float3 outRgb = saturate(lit) * albedo.rgb;
     outRgb = saturate(outRgb + specAccum + pSpec);
+
+    // ===== 대기 거리 안개 (Distance Fog) =====
+    if (enableFog != 0)
+    {
+        float dist = length(input.worldPos.xyz - cameraPosition);
+        float fogFactor = saturate((fogEnd - dist) / max(0.001f, fogEnd - fogStart));
+        outRgb = lerp(fogColor.rgb, outRgb, fogFactor);
+    }
 
     return float4(outRgb, albedo.a);
 }

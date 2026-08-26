@@ -1,4 +1,4 @@
-﻿////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 // Filename: graphicsclass.h
 // Description: Main graphics class - now delegates to specialized managers
 ////////////////////////////////////////////////////////////////////////////////
@@ -36,10 +36,12 @@ using namespace DirectX;
 // New managers & Shadow System
 #include "LightManager.h"
 #include "ProjectileSystem.h"
+#include "AnimalQuestSystem.h"
 #include "PlayerController.h"
 #include "SceneManager.h"
 #include "ShadowMapClass.h"
 #include "DepthShaderClass.h"
+#include "ParticleSystem.h"
 
 /////////////
 // GLOBALS //
@@ -89,6 +91,7 @@ private:
     bool Render();
     bool RenderShadowPass();
     bool RenderTitle();
+    void RenderQuestHUD(); // 인게임 퀘스트 HUD 오버레이
 
     // Scene state
     enum SceneType { SCENE_TITLE, SCENE_MAIN };
@@ -102,8 +105,10 @@ private:
     // ========== Managers ==========
     LightManager m_lightManager;
     ProjectileSystem m_projectileSystem;
+    AnimalQuestSystem m_questSystem;
     PlayerController m_playerController;
     SceneManager m_sceneManager;
+    ParticleSystem m_particleSystem;
 
     // ========== Shaders ==========
     TextureShaderClass* m_TextureShader = nullptr;

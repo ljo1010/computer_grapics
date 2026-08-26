@@ -92,7 +92,12 @@ bool LightShaderClass::RenderEx(ID3D11DeviceContext* deviceContext, int indexCou
     float shadowBias,
     float shadowIntensity,
     bool enableShadow,
-    bool enablePCF)
+    bool enablePCF,
+    // Distance Fog (대기 거리 안개)
+    XMFLOAT4 fogColor,
+    float fogStart,
+    float fogEnd,
+    bool enableFog)
 {
     if (!SetShaderParametersEx(deviceContext, worldMatrix, viewMatrix, projectionMatrix,
         texture, cameraPosition, ambientColor, directionalDiffuse,
@@ -100,7 +105,8 @@ bool LightShaderClass::RenderEx(ID3D11DeviceContext* deviceContext, int indexCou
         pointPositions, pointDiffuse, pointCount,
         kc, kl, kq, pointIntensityScale,
         enableAmbient, enableDiffuse, enableSpecular,
-        shadowMapSRV, lightViewMatrix, lightProjMatrix, shadowBias, shadowIntensity, enableShadow, enablePCF))
+        shadowMapSRV, lightViewMatrix, lightProjMatrix, shadowBias, shadowIntensity, enableShadow, enablePCF,
+        fogColor, fogStart, fogEnd, enableFog))
         return false;
 
     RenderShader(deviceContext, indexCount);
@@ -230,6 +236,11 @@ bool LightShaderClass::InitializeShader(ID3D11Device* device, HWND hwnd, const W
     result = device->CreateBuffer(&desc, nullptr, &m_shadowBuffer);
     if (FAILED(result)) return false;
 
+    // FogBuffer (PS slot 8)
+    desc.ByteWidth = sizeof(FogBufferType);
+    result = device->CreateBuffer(&desc, nullptr, &m_fogBuffer);
+    if (FAILED(result)) return false;
+
     return true;
 }
 
@@ -237,6 +248,7 @@ void LightShaderClass::ShutdownShader()
 {
     auto safeRelease = [](auto*& p) { if (p) { p->Release(); p = nullptr; } };
 
+    safeRelease(m_fogBuffer);
     safeRelease(m_shadowBuffer);
     safeRelease(m_toggleBuffer);
     safeRelease(m_attenuationBuffer);
@@ -399,7 +411,12 @@ bool LightShaderClass::SetShaderParametersEx(ID3D11DeviceContext* deviceContext,
     float shadowBias,
     float shadowIntensity,
     bool enableShadow,
-    bool enablePCF)
+    bool enablePCF,
+    // Distance Fog (대기 거리 안개)
+    XMFLOAT4 fogColor,
+    float fogStart,
+    float fogEnd,
+    bool enableFog)
 {
     worldMatrix = XMMatrixTranspose(worldMatrix);
     viewMatrix = XMMatrixTranspose(viewMatrix);
@@ -514,6 +531,24 @@ bool LightShaderClass::SetShaderParametersEx(ID3D11DeviceContext* deviceContext,
 
             deviceContext->VSSetConstantBuffers(7, 1, &m_shadowBuffer);
             deviceContext->PSSetConstantBuffers(7, 1, &m_shadowBuffer);
+        }
+    }
+
+    // PS slot 8: Fog Buffer (대기 거리 안개)
+    if (m_fogBuffer)
+    {
+        hr = deviceContext->Map(m_fogBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+        if (SUCCEEDED(hr))
+        {
+            FogBufferType* f = (FogBufferType*)mapped.pData;
+            f->fogColor = fogColor;
+            f->fogStart = fogStart;
+            f->fogEnd = fogEnd;
+            f->enableFog = enableFog ? 1 : 0;
+            f->_fogPadding = 0.0f;
+            deviceContext->Unmap(m_fogBuffer, 0);
+
+            deviceContext->PSSetConstantBuffers(8, 1, &m_fogBuffer);
         }
     }
 

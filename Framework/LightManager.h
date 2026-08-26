@@ -88,6 +88,37 @@ public:
     bool IsPcfEnabled() const { return m_pcfEnabled; }
     void SetPcfEnabled(bool enabled) { m_pcfEnabled = enabled; }
 
+    // Sun Orbit (실시간 태양 자전/일주 운동)
+    void UpdateSunOrbit(float dt);
+    bool* GetSunAutoRotatePtr() { return &m_sunAutoRotate; }
+    bool IsSunAutoRotate() const { return m_sunAutoRotate; }
+    void SetSunAutoRotate(bool autoRotate) { m_sunAutoRotate = autoRotate; }
+
+    float* GetSunRotateSpeedPtr() { return &m_sunRotateSpeed; }
+    float GetSunRotateSpeed() const { return m_sunRotateSpeed; }
+    void SetSunRotateSpeed(float speed) { m_sunRotateSpeed = speed; }
+
+    float* GetSunAnglePtr() { return &m_sunAngle; }
+    float GetSunAngle() const { return m_sunAngle; }
+    void SetSunAngle(float angle) { m_sunAngle = angle; }
+
+    // ===== 거리 기반 대기 안개 효과 (Distance Fog) =====
+    DirectX::XMFLOAT4 GetFogColor() const { return m_fogColor; }
+    DirectX::XMFLOAT4* GetFogColorPtr() { return &m_fogColor; }
+    void SetFogColor(const DirectX::XMFLOAT4& color) { m_fogColor = color; }
+
+    float GetFogStart() const { return m_fogStart; }
+    float* GetFogStartPtr() { return &m_fogStart; }
+    void SetFogStart(float start) { m_fogStart = start; }
+
+    float GetFogEnd() const { return m_fogEnd; }
+    float* GetFogEndPtr() { return &m_fogEnd; }
+    void SetFogEnd(float end) { m_fogEnd = end; }
+
+    bool IsFogEnabled() const { return m_fogEnabled; }
+    bool* GetFogEnabledPtr() { return &m_fogEnabled; }
+    void SetFogEnabled(bool enabled) { m_fogEnabled = enabled; }
+
 private:
     void InitDefaults();
     void SyncFromLightClass();
@@ -101,6 +132,17 @@ private:
     DirectX::XMFLOAT3 m_dirDirection = DirectX::XMFLOAT3(0, -1, 0);
     DirectX::XMFLOAT4 m_specularColor = DirectX::XMFLOAT4(1, 1, 1, 1);
     float m_specularPower = 32.0f;
+
+    // Sun Orbit / Rotation
+    bool m_sunAutoRotate = true;   // 실시간 태양 자전 활성화 (기본 ON)
+    float m_sunRotateSpeed = 0.25f; // 회전 속도 (초당 라디안)
+    float m_sunAngle = 0.8f;       // 현재 태양 공전 각도
+
+    // Distance Fog (거리 기반 대기 안개)
+    DirectX::XMFLOAT4 m_fogColor = DirectX::XMFLOAT4(0.72f, 0.76f, 0.85f, 1.0f); // 하늘색 조화 대기 안개
+    float m_fogStart = 15.0f;     // 안개 시작 거리 (15m부터 서서히 안개 시작)
+    float m_fogEnd = 75.0f;       // 안개 최대 거리 (75m에서 완전히 대기 안개에 융합)
+    bool m_fogEnabled = true;     // 안개 기본 ON
 
     // Point Lights
     int m_pointCount = 0;

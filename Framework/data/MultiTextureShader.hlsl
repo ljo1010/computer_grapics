@@ -43,6 +43,16 @@ cbuffer DirLightBuffer : register(b4)
     float _dirPad;
 };
 
+cbuffer FogBuffer : register(b5)
+{
+    float3 cameraPos;
+    float fogStart;
+    float4 fogColor;
+    float fogEnd;
+    int enableFog;
+    float2 _fogPad;
+};
+
 Texture2D tex0 : register(t0);
 Texture2D tex1 : register(t1);
 Texture2D texAlpha : register(t2);
@@ -174,5 +184,15 @@ float4 PS_main(VS_OUTPUT i) : SV_TARGET
     float3 lit = totalAmbient + dirLit + diff0 + diff1;
     lit = saturate(lit);
 
-    return float4(baseColor * lit, 1.0f);
+    float3 finalColor = baseColor * lit;
+
+    // ===== 대기 거리 안개 (Distance Fog) =====
+    if (enableFog != 0)
+    {
+        float dist = length(i.worldPos.xyz - cameraPos);
+        float fogFactor = saturate((fogEnd - dist) / max(0.001f, fogEnd - fogStart));
+        finalColor = lerp(fogColor.rgb, finalColor, fogFactor);
+    }
+
+    return float4(finalColor, 1.0f);
 }

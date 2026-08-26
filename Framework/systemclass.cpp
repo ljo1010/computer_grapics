@@ -166,13 +166,11 @@ bool SystemClass::Frame()
     prevToggleState = currToggleState;
 
     float forward = 0, right = 0, up = 0;
-    // 커서가 잠겨 있을 때(게임 플레이 모드) 또는 UI 조작 중에도 이동 허용
+    // WASD 이동 (E, Q의 Y축 이동 매핑은 해제하여 E키를 동물 먹이주기 전용으로 사용)
     if (m_Input->IsDIKeyDown(DIK_W)) forward += 3.0f;
     if (m_Input->IsDIKeyDown(DIK_S)) forward -= 3.0f;
     if (m_Input->IsDIKeyDown(DIK_D)) right += 3.0f;
     if (m_Input->IsDIKeyDown(DIK_A)) right -= 3.0f;
-    if (m_Input->IsDIKeyDown(DIK_E)) up += 3.0f;
-    if (m_Input->IsDIKeyDown(DIK_Q)) up -= 3.0f;
 
     float dt = GetDeltaSeconds();
     if (m_Input->IsDIKeyDown(DIK_LSHIFT) || m_Input->IsDIKeyDown(DIK_RSHIFT)) dt *= 4.0f;

@@ -48,7 +48,13 @@ bool MultiTextureShaderClass::Render(
     float shadowBias,
     float shadowIntensity,
     bool enableShadow,
-    bool enablePCF)
+    bool enablePCF,
+    // Distance Fog (대기 거리 안개)
+    const XMFLOAT3& cameraPos,
+    const XMFLOAT4& fogColor,
+    float fogStart,
+    float fogEnd,
+    bool enableFog)
 {
     if (!SetShaderParameters(dc, world, view, proj,
         tex0, tex1, texAlpha,
@@ -58,7 +64,8 @@ bool MultiTextureShaderClass::Render(
         pointPos1, pointColor1, pointRange1,
         dirAmbient, dirDiffuse, dirDirection,
         shadowMapSRV, lightView, lightProj,
-        shadowBias, shadowIntensity, enableShadow, enablePCF))
+        shadowBias, shadowIntensity, enableShadow, enablePCF,
+        cameraPos, fogColor, fogStart, fogEnd, enableFog))
         return false;
 
     RenderShader(dc, indexCount);
@@ -91,7 +98,13 @@ bool MultiTextureShaderClass::SetShaderParameters(
     float shadowBias,
     float shadowIntensity,
     bool enableShadow,
-    bool enablePCF)
+    bool enablePCF,
+    // Distance Fog (대기 거리 안개)
+    const XMFLOAT3& cameraPos,
+    const XMFLOAT4& fogColor,
+    float fogStart,
+    float fogEnd,
+    bool enableFog)
 {
     // --- b0 : MatrixBuffer ---
     {
@@ -179,6 +192,25 @@ bool MultiTextureShaderClass::SetShaderParameters(
             dc->Unmap(m_dirLightBuffer, 0);
 
             dc->PSSetConstantBuffers(4, 1, &m_dirLightBuffer);
+        }
+    }
+
+    // --- b5 : FogBuffer (대기 거리 안개) ---
+    if (m_fogBuffer)
+    {
+        D3D11_MAPPED_SUBRESOURCE map{};
+        if (SUCCEEDED(dc->Map(m_fogBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &map)))
+        {
+            auto* fb = reinterpret_cast<FogBufferType*>(map.pData);
+            fb->cameraPos = cameraPos;
+            fb->fogStart = fogStart;
+            fb->fogColor = fogColor;
+            fb->fogEnd = fogEnd;
+            fb->enableFog = enableFog ? 1 : 0;
+            fb->_fogPad = XMFLOAT2(0.0f, 0.0f);
+            dc->Unmap(m_fogBuffer, 0);
+
+            dc->PSSetConstantBuffers(5, 1, &m_fogBuffer);
         }
     }
 
@@ -270,6 +302,10 @@ bool MultiTextureShaderClass::InitializeShader(ID3D11Device* device, HWND hwnd, 
     bd.ByteWidth = sizeof(DirLightBufferType);
     device->CreateBuffer(&bd, nullptr, &m_dirLightBuffer);
 
+    // Fog buffer (b5)
+    bd.ByteWidth = sizeof(FogBufferType);
+    device->CreateBuffer(&bd, nullptr, &m_fogBuffer);
+
     // ---- sampler
     D3D11_SAMPLER_DESC sd{};
     sd.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
@@ -289,6 +325,7 @@ bool MultiTextureShaderClass::InitializeShader(ID3D11Device* device, HWND hwnd, 
 // =============================
 void MultiTextureShaderClass::ShutdownShader()
 {
+    if (m_fogBuffer)      m_fogBuffer->Release(), m_fogBuffer = nullptr;
     if (m_samplerState)   m_samplerState->Release(), m_samplerState = nullptr;
     if (m_dirLightBuffer) m_dirLightBuffer->Release(), m_dirLightBuffer = nullptr;
     if (m_shadowBuffer)   m_shadowBuffer->Release(), m_shadowBuffer = nullptr;

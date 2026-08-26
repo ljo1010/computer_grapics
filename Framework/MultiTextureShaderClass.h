@@ -39,7 +39,13 @@ public:
         float shadowBias = 0.0015f,
         float shadowIntensity = 0.85f,
         bool enableShadow = true,
-        bool enablePCF = true
+        bool enablePCF = true,
+        // Distance Fog (대기 거리 안개)
+        const DirectX::XMFLOAT3& cameraPos = DirectX::XMFLOAT3(0, 0, 0),
+        const DirectX::XMFLOAT4& fogColor = DirectX::XMFLOAT4(0.72f, 0.76f, 0.85f, 1.0f),
+        float fogStart = 15.0f,
+        float fogEnd = 75.0f,
+        bool enableFog = true
     );
 
 private:
@@ -71,7 +77,13 @@ private:
         float shadowBias,
         float shadowIntensity,
         bool enableShadow,
-        bool enablePCF);
+        bool enablePCF,
+        // Distance Fog (대기 거리 안개)
+        const DirectX::XMFLOAT3& cameraPos,
+        const DirectX::XMFLOAT4& fogColor,
+        float fogStart,
+        float fogEnd,
+        bool enableFog);
 
     void RenderShader(ID3D11DeviceContext* dc, int indexCount);
 
@@ -123,6 +135,16 @@ private:
         float _dirPad;
     };
 
+    struct FogBufferType
+    {
+        DirectX::XMFLOAT3 cameraPos;
+        float fogStart;
+        DirectX::XMFLOAT4 fogColor;
+        float fogEnd;
+        int enableFog;
+        DirectX::XMFLOAT2 _fogPad;
+    };
+
     ID3D11VertexShader* m_vertexShader = nullptr;
     ID3D11PixelShader* m_pixelShader = nullptr;
     ID3D11InputLayout* m_layout = nullptr;
@@ -131,5 +153,6 @@ private:
     ID3D11Buffer* m_lightBuffer = nullptr;
     ID3D11Buffer* m_shadowBuffer = nullptr;
     ID3D11Buffer* m_dirLightBuffer = nullptr;
+    ID3D11Buffer* m_fogBuffer = nullptr;
     ID3D11SamplerState* m_samplerState = nullptr;
 };

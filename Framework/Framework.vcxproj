@@ -178,6 +178,8 @@
     <ClCompile Include="Shader.cpp" />
     <ClCompile Include="ShadowMapClass.cpp" />
     <ClCompile Include="DepthShaderClass.cpp" />
+    <ClCompile Include="AnimalQuestSystem.cpp" />
+    <ClCompile Include="ParticleSystem.cpp" />
     <ClCompile Include="SkinModel.cpp" />
     <ClCompile Include="SkinShaderClass.cpp" />
     <ClCompile Include="Skybox.cpp" />
@@ -225,6 +227,8 @@
     <ClInclude Include="pch.h" />
     <ClInclude Include="PlayerController.h" />
     <ClInclude Include="ProjectileSystem.h" />
+    <ClInclude Include="AnimalQuestSystem.h" />
+    <ClInclude Include="ParticleSystem.h" />
     <ClInclude Include="ResourceManager.h" />
     <ClInclude Include="RMModel.h" />
     <ClInclude Include="RMShader.h" />

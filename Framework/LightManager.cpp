@@ -119,3 +119,32 @@ void LightManager::GenerateLightProjectionMatrix(float sceneWidth, float sceneHe
 {
     m_lightProjMatrix = DirectX::XMMatrixOrthographicLH(sceneWidth, sceneHeight, nearZ, farZ);
 }
+
+// 실시간 태양 자전 / 일주 운동 (Sun Orbit Cycle)
+void LightManager::UpdateSunOrbit(float dt)
+{
+    if (m_sunAutoRotate)
+    {
+        m_sunAngle += dt * m_sunRotateSpeed;
+        if (m_sunAngle > DirectX::XM_2PI)
+        {
+            m_sunAngle -= DirectX::XM_2PI;
+        }
+    }
+
+    // 태양의 3차원 궤도 계산 (동 -> 남 -> 서를 거쳐 하늘을 가로지르는 자연스러운 일주 운동)
+    // elevation(고도)을 0.40 ~ 1.00 사이로 유지하여 언제나 지상에 선명한 태양광과 움직이는 그림자 형성
+    float elevation = sinf(m_sunAngle) * 0.30f + 0.70f;
+    float dirX = cosf(m_sunAngle);
+    float dirZ = sinf(m_sunAngle);
+
+    using namespace DirectX;
+    XMVECTOR sunDirVec = XMVectorSet(dirX * 0.85f, -elevation, dirZ * 0.85f, 0.0f);
+    sunDirVec = XMVector3Normalize(sunDirVec);
+    XMStoreFloat3(&m_dirDirection, sunDirVec);
+
+    if (m_light)
+    {
+        m_light->SetDirection(m_dirDirection.x, m_dirDirection.y, m_dirDirection.z);
+    }
+}

@@ -26,8 +26,12 @@ public:
     // Returns true if pig was hit
     void Update(float dt, const DirectX::XMFLOAT3& pigPos, float pigRadius, bool& outPigHit);
 
+    // Update positions and lifetime only (collision handled by AnimalQuestSystem)
+    void UpdateMotionOnly(float dt);
+
     // Get all active projectiles (for rendering)
     const std::vector<HayProjectile>& GetProjectiles() const { return m_projectiles; }
+    std::vector<HayProjectile>& GetProjectilesRef() { return m_projectiles; }
 
     // Ammo management
     bool HasAmmo() const { return m_hasAmmo; }

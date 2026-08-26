@@ -1,23 +1,25 @@
+﻿// Filename: FbxModelClass.cpp
+////////////////////////////////////////////////////////////////////////////////
 #include "FbxModelClass.h"
 
-#include <string>
 #include <vector>
+#include <string>
+#include <windows.h>
 
+using namespace std;
 using namespace DirectX;
-using std::vector;
 
-// ������ wstring �� ansi string ��ȯ (FBX ��ο� �ѱ� ���ٰ� ����)
 static std::string WStringToAnsi(const std::wstring& ws)
 {
-    int len = WideCharToMultiByte(CP_ACP, 0, ws.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    std::string s(len, 0);
-    WideCharToMultiByte(CP_ACP, 0, ws.c_str(), -1, &s[0], len, nullptr, nullptr);
-    if (!s.empty() && s.back() == '\0') s.pop_back();
+    if (ws.empty()) return std::string();
+    int size = WideCharToMultiByte(CP_ACP, 0, ws.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    std::string s(size - 1, 0);
+    WideCharToMultiByte(CP_ACP, 0, ws.c_str(), -1, &s[0], size, nullptr, nullptr);
     return s;
 }
 
 //-----------------------------------------------------------------------------
-// ������ / �Ҹ���
+// 생성자 / 소멸자
 //-----------------------------------------------------------------------------
 FbxModelClass::FbxModelClass()
 {
@@ -26,8 +28,8 @@ FbxModelClass::FbxModelClass()
     m_vertexCount = 0;
     m_indexCount = 0;
 
-    m_instanceBuffer = nullptr;   // �ν��Ͻ� ����
-    m_instanceCount = 0;         // �ν��Ͻ� ����
+    m_instanceBuffer = nullptr;   // 인스턴스 버퍼
+    m_instanceCount = 0;         // 인스턴스 개수
 
     m_Texture = nullptr;
 }
@@ -38,17 +40,17 @@ FbxModelClass::~FbxModelClass()
 }
 
 //-----------------------------------------------------------------------------
-// Initialize : FBX + �ؽ�ó �ε�
+// Initialize : FBX + 텍스처 로드
 //-----------------------------------------------------------------------------
 bool FbxModelClass::Initialize(ID3D11Device* device,
     const wchar_t* fbxFilename,
     const wchar_t* textureFilename)
 {
-    // 1) ��� ��ȯ
+    // 1) 경로 변환
     std::wstring ws(fbxFilename);
     std::string  path = WStringToAnsi(ws);
 
-    // 2) Assimp�� FBX �б�
+    // 2) Assimp로 FBX 읽기
     Assimp::Importer importer;
     const aiScene* scene = importer.ReadFile(
         path,
@@ -60,14 +62,14 @@ bool FbxModelClass::Initialize(ID3D11Device* device,
     if (!scene || !scene->HasMeshes())
         return false;
 
-    // ù ��° �޽� �ϳ��� ���
+    // 첫 번째 메시 사용
     const aiMesh* mesh = scene->mMeshes[0];
 
-    // 3) ����/�ε��� ���� ����
+    // 3) 정점/인덱스 버퍼 생성
     if (!InitializeBuffers(device, mesh))
         return false;
 
-    // 4) �ؽ�ó �ε� (���� ModelClass�� ������ ���)
+    // 4) 텍스처 로드
     if (!LoadTexture(device, textureFilename))
         return false;
 
@@ -84,7 +86,7 @@ void FbxModelClass::Shutdown()
 }
 
 //-----------------------------------------------------------------------------
-// ����/�ε��� ���� ����
+// 정점/인덱스 버퍼 생성
 //-----------------------------------------------------------------------------
 bool FbxModelClass::InitializeBuffers(ID3D11Device* device, const aiMesh* mesh)
 {
@@ -94,16 +96,16 @@ bool FbxModelClass::InitializeBuffers(ID3D11Device* device, const aiMesh* mesh)
     vector<VertexType>    vertices(m_vertexCount);
     vector<unsigned long> indices(m_indexCount);
 
-    // ----- ���� ä��� -----
+    // ----- 정점 채우기 -----
     for (unsigned int i = 0; i < mesh->mNumVertices; ++i)
     {
-        // ��ġ
+        // 위치
         vertices[i].position = XMFLOAT3(
             mesh->mVertices[i].x,
             mesh->mVertices[i].y,
             mesh->mVertices[i].z);
 
-        // ���
+        // 법선
         if (mesh->HasNormals())
         {
             vertices[i].normal = XMFLOAT3(
@@ -116,7 +118,7 @@ bool FbxModelClass::InitializeBuffers(ID3D11Device* device, const aiMesh* mesh)
             vertices[i].normal = XMFLOAT3(0.0f, 1.0f, 0.0f);
         }
 
-        // �ؽ�ó ��ǥ (ä�� 0 ���)
+        // 텍스처 좌표 (채널 0 사용)
         if (mesh->HasTextureCoords(0))
         {
             vertices[i].tex = XMFLOAT2(
@@ -129,22 +131,21 @@ bool FbxModelClass::InitializeBuffers(ID3D11Device* device, const aiMesh* mesh)
         }
     }
 
-    // ----- �ε��� ä��� -----
+    // ----- 인덱스 채우기 -----
     int index = 0;
     for (unsigned int f = 0; f < mesh->mNumFaces; ++f)
     {
         const aiFace& face = mesh->mFaces[f];
-        // Triangulate �����Ƿ� 3�� �ε������ ����
+        // Triangulate 되었으므로 3개 인덱스만 사용
         if (face.mNumIndices == 3)
         {
             indices[index++] = face.mIndices[0];
             indices[index++] = face.mIndices[1];
             indices[index++] = face.mIndices[2];
         }
-        // 3�� �ƴϸ� ����
     }
 
-    // ----- D3D ���� ���� -----
+    // ----- D3D 버퍼 생성 -----
     HRESULT result;
 
     // Vertex buffer
@@ -191,25 +192,22 @@ bool FbxModelClass::InitializeBuffers(ID3D11Device* device, const aiMesh* mesh)
 }
 
 //-----------------------------------------------------------------------------
-// �ν��Ͻ� ���� ���� (instanceCount ����, ��ġ�� ���ο��� ���Ƿ� ��ġ ����)
+// 인스턴스 버퍼 생성
 //-----------------------------------------------------------------------------
 bool FbxModelClass::InitializeInstanceBuffer(
     ID3D11Device* device,
     const std::vector<XMFLOAT3>& instancePositions)
 {
-    // ���� ���� ������ ����
     if (m_instanceBuffer)
     {
         m_instanceBuffer->Release();
         m_instanceBuffer = nullptr;
     }
 
-    // �ν��Ͻ� ���� ����
     m_instanceCount = static_cast<int>(instancePositions.size());
     if (m_instanceCount <= 0)
-        return true;   // �ν��Ͻ��� 0�̸� �׳� ����
+        return true;
 
-    // CPU �� �ӽ� ����
     std::vector<InstanceType> instances(m_instanceCount);
 
     for (int i = 0; i < m_instanceCount; ++i)
@@ -242,11 +240,10 @@ bool FbxModelClass::InitializeInstanceBuffer(
 }
 
 //-----------------------------------------------------------------------------
-// ���� ����
+// 버퍼 해제
 //-----------------------------------------------------------------------------
 void FbxModelClass::ShutdownBuffers()
 {
-    // �ν��Ͻ� ����
     if (m_instanceBuffer)
     {
         m_instanceBuffer->Release();
@@ -254,7 +251,6 @@ void FbxModelClass::ShutdownBuffers()
     }
     m_instanceCount = 0;
 
-    // �ε���/���� ����
     if (m_indexBuffer)
     {
         m_indexBuffer->Release();
@@ -272,7 +268,7 @@ void FbxModelClass::ShutdownBuffers()
 }
 
 //-----------------------------------------------------------------------------
-// �Ϲ� ���� (���ν��Ͻ�) - ���� ���� �״��
+// 일반 렌더 (논인스턴싱)
 //-----------------------------------------------------------------------------
 void FbxModelClass::Render(ID3D11DeviceContext* deviceContext)
 {
@@ -284,21 +280,13 @@ void FbxModelClass::RenderBuffers(ID3D11DeviceContext* deviceContext)
     unsigned int stride = sizeof(VertexType);
     unsigned int offset = 0;
 
-    // ���� ���� / �ε��� ���� ���ε�
     deviceContext->IASetVertexBuffers(0, 1, &m_vertexBuffer, &stride, &offset);
     deviceContext->IASetIndexBuffer(m_indexBuffer, DXGI_FORMAT_R32_UINT, 0);
-
-    // �ﰢ�� ����Ʈ�� �׸���
     deviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-    // ���⼭�� Draw ȣ�� ���� (�׷��Ƚ�/���̴� �ʿ��� DrawIndexed ȣ���ϴ� ���� ����)
 }
 
 //-----------------------------------------------------------------------------
-// �ν��Ͻ� ������ : IA�� (���� ���� + �ν��Ͻ� ����) ���ε�
-//  - GraphicsClass �Ǵ� ShaderClass �ʿ���
-//    DrawIndexedInstanced(m_indexCount, m_instanceCount, 0, 0, 0);
-//    �� ȣ���ϴ� ������ ���� ��.
+// 인스턴스 렌더용
 //-----------------------------------------------------------------------------
 void FbxModelClass::RenderInstanced(ID3D11DeviceContext* deviceContext)
 {
@@ -309,14 +297,14 @@ void FbxModelClass::RenderInstanced(ID3D11DeviceContext* deviceContext)
     unsigned int offsets[2];
     ID3D11Buffer* buffers[2];
 
-    strides[0] = sizeof(VertexType);   // Stream 0: ����
-    strides[1] = sizeof(InstanceType); // Stream 1: �ν��Ͻ�
+    strides[0] = sizeof(VertexType);
+    strides[1] = sizeof(InstanceType);
 
     offsets[0] = 0;
     offsets[1] = 0;
 
-    buffers[0] = m_vertexBuffer;    // slot 0
-    buffers[1] = m_instanceBuffer;  // slot 1
+    buffers[0] = m_vertexBuffer;
+    buffers[1] = m_instanceBuffer;
 
     deviceContext->IASetVertexBuffers(0, 2, buffers, strides, offsets);
     deviceContext->IASetIndexBuffer(m_indexBuffer, DXGI_FORMAT_R32_UINT, 0);
@@ -324,7 +312,7 @@ void FbxModelClass::RenderInstanced(ID3D11DeviceContext* deviceContext)
 }
 
 //-----------------------------------------------------------------------------
-// �ؽ�ó �ε� / ����
+// 텍스처 로드 / 해제
 //-----------------------------------------------------------------------------
 bool FbxModelClass::LoadTexture(ID3D11Device* device, const wchar_t* filename)
 {
@@ -332,8 +320,7 @@ bool FbxModelClass::LoadTexture(ID3D11Device* device, const wchar_t* filename)
     if (!m_Texture)
         return false;
 
-    bool result = m_Texture->Initialize(device, filename);
-    if (!result)
+    if (!m_Texture->Initialize(device, filename))
         return false;
 
     return true;
