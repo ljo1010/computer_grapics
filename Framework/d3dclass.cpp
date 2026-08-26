@@ -15,6 +15,7 @@ D3DClass::D3DClass()
 	m_depthStencilState = 0;
 	m_depthStencilView = 0;
 	m_rasterState = 0;
+	m_rasterStateWireframe = 0;
 
 	m_depthDisabledStencilState = 0;
 
@@ -42,7 +43,7 @@ bool D3DClass::Initialize(int screenWidth, int screenHeight, bool vsync, HWND hw
 	IDXGIOutput* adapterOutput;
 	//unsigned int numModes, i, numerator, denominator, stringLength;
 	unsigned int numModes, i;
-	unsigned int numerator = 0;  // �ݵ�� �ʱ�ȭ
+	unsigned int numerator = 0;  // �ݵ�� �ʱ�ȭ
 	unsigned int denominator = 1;
 	size_t stringLength = 0;
 	DXGI_MODE_DESC* displayModeList;
@@ -55,7 +56,6 @@ bool D3DClass::Initialize(int screenWidth, int screenHeight, bool vsync, HWND hw
 	D3D11_DEPTH_STENCIL_DESC depthStencilDesc;
 	D3D11_DEPTH_STENCIL_VIEW_DESC depthStencilViewDesc;
 	D3D11_RASTERIZER_DESC rasterDesc;
-	D3D11_VIEWPORT viewport;
 	float fieldOfView, screenAspect;
 
 	D3D11_DEPTH_STENCIL_DESC depthDisabledStencilDesc;
@@ -332,19 +332,27 @@ bool D3DClass::Initialize(int screenWidth, int screenHeight, bool vsync, HWND hw
 		return false;
 	}
 
+	// 와이어프레임용 래스터라이저 상태 생성 (FillMode = WIREFRAME)
+	rasterDesc.FillMode = D3D11_FILL_WIREFRAME;
+	result = m_device->CreateRasterizerState(&rasterDesc, &m_rasterStateWireframe);
+	if (FAILED(result))
+	{
+		return false;
+	}
+
 	// Now set the rasterizer state.
 	m_deviceContext->RSSetState(m_rasterState);
 
 	// Setup the viewport for rendering.
-	viewport.Width = (float)screenWidth;
-	viewport.Height = (float)screenHeight;
-	viewport.MinDepth = 0.0f;
-	viewport.MaxDepth = 1.0f;
-	viewport.TopLeftX = 0.0f;
-	viewport.TopLeftY = 0.0f;
+	m_viewport.Width = (float)screenWidth;
+	m_viewport.Height = (float)screenHeight;
+	m_viewport.MinDepth = 0.0f;
+	m_viewport.MaxDepth = 1.0f;
+	m_viewport.TopLeftX = 0.0f;
+	m_viewport.TopLeftY = 0.0f;
 
 	// Create the viewport.
-	m_deviceContext->RSSetViewports(1, &viewport);
+	m_deviceContext->RSSetViewports(1, &m_viewport);
 
 	// Setup the projection matrix.
 	fieldOfView = (float)XM_PI / 4.0f;
@@ -434,6 +442,12 @@ void D3DClass::Shutdown()
 		m_rasterState = 0;
 	}
 
+	if (m_rasterStateWireframe)
+	{
+		m_rasterStateWireframe->Release();
+		m_rasterStateWireframe = 0;
+	}
+
 	if (m_depthStencilView)
 	{
 		m_depthStencilView->Release();
@@ -498,16 +512,25 @@ void D3DClass::Shutdown()
 }
 
 
+void D3DClass::SetBackBufferRenderTarget()
+{
+	// 메인 렌더 타깃 및 기본 화면 뷰포트 복원
+	m_deviceContext->OMSetRenderTargets(1, &m_renderTargetView, m_depthStencilView);
+	m_deviceContext->RSSetViewports(1, &m_viewport);
+}
+
 void D3DClass::BeginScene(float red, float green, float blue, float alpha)
 {
 	float color[4];
-
 
 	// Setup the color to clear the buffer to.
 	color[0] = red;
 	color[1] = green;
 	color[2] = blue;
 	color[3] = alpha;
+
+	// 메인 백버퍼 및 기본 뷰포트 바인딩 복원 (그림자 패스 후 필수)
+	SetBackBufferRenderTarget();
 
 	// Clear the back buffer.
 	m_deviceContext->ClearRenderTargetView(m_renderTargetView, color);
@@ -624,3 +647,118 @@ void D3DClass::TurnOffAlphaBlending()
 
 	return;
 }
+
+// 와이어프레임 렌더링 모드 ON / OFF 전환
+void D3DClass::SetWireframe(bool enable)
+{
+	if (enable && m_rasterStateWireframe)
+	{
+		m_deviceContext->RSSetState(m_rasterStateWireframe);
+	}
+	else if (m_rasterState)
+	{
+		m_deviceContext->RSSetState(m_rasterState);
+	}
+}
+
+// 창 크기 변경(Resize) 시 백버퍼, RTV, DSV, 뷰포트, 투영행렬을 동적으로 재생성하는 함수
+bool D3DClass::Resize(int screenWidth, int screenHeight, float screenNear, float screenDepth)
+{
+	if (!m_swapChain || !m_device || !m_deviceContext) return false;
+	if (screenWidth <= 0 || screenHeight <= 0) return false;
+
+	// 1. 기존 파이프라인 바인딩 해제
+	m_deviceContext->OMSetRenderTargets(0, nullptr, nullptr);
+
+	// 2. 이전 렌더 타깃 뷰 및 깊이 버퍼 리소스 해제
+	if (m_renderTargetView)
+	{
+		m_renderTargetView->Release();
+		m_renderTargetView = 0;
+	}
+	if (m_depthStencilView)
+	{
+		m_depthStencilView->Release();
+		m_depthStencilView = 0;
+	}
+	if (m_depthStencilBuffer)
+	{
+		m_depthStencilBuffer->Release();
+		m_depthStencilBuffer = 0;
+	}
+
+	// 3. 스왑 체인 백버퍼 크기 리사이즈
+	HRESULT result = m_swapChain->ResizeBuffers(1, screenWidth, screenHeight, DXGI_FORMAT_R8G8B8A8_UNORM, 0);
+	if (FAILED(result))
+	{
+		return false;
+	}
+
+	// 4. 백버퍼로부터 렌더 타깃 뷰(RTV) 재생성
+	ID3D11Texture2D* backBufferPtr = nullptr;
+	result = m_swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&backBufferPtr);
+	if (FAILED(result))
+	{
+		return false;
+	}
+
+	result = m_device->CreateRenderTargetView(backBufferPtr, NULL, &m_renderTargetView);
+	backBufferPtr->Release();
+	backBufferPtr = 0;
+	if (FAILED(result))
+	{
+		return false;
+	}
+
+	// 5. 새 해상도에 맞는 깊이/스텐실 버퍼 및 뷰(DSV) 재생성
+	D3D11_TEXTURE2D_DESC depthBufferDesc{};
+	depthBufferDesc.Width = screenWidth;
+	depthBufferDesc.Height = screenHeight;
+	depthBufferDesc.MipLevels = 1;
+	depthBufferDesc.ArraySize = 1;
+	depthBufferDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+	depthBufferDesc.SampleDesc.Count = 1;
+	depthBufferDesc.SampleDesc.Quality = 0;
+	depthBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+	depthBufferDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+	depthBufferDesc.CPUAccessFlags = 0;
+	depthBufferDesc.MiscFlags = 0;
+
+	result = m_device->CreateTexture2D(&depthBufferDesc, NULL, &m_depthStencilBuffer);
+	if (FAILED(result))
+	{
+		return false;
+	}
+
+	D3D11_DEPTH_STENCIL_VIEW_DESC depthStencilViewDesc{};
+	depthStencilViewDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+	depthStencilViewDesc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
+	depthStencilViewDesc.Texture2D.MipSlice = 0;
+
+	result = m_device->CreateDepthStencilView(m_depthStencilBuffer, &depthStencilViewDesc, &m_depthStencilView);
+	if (FAILED(result))
+	{
+		return false;
+	}
+
+	// 6. 렌더 타깃 및 깊이 버퍼 다시 바인딩
+	m_deviceContext->OMSetRenderTargets(1, &m_renderTargetView, m_depthStencilView);
+
+	// 7. 뷰포트 재설정
+	m_viewport.Width = (float)screenWidth;
+	m_viewport.Height = (float)screenHeight;
+	m_viewport.MinDepth = 0.0f;
+	m_viewport.MaxDepth = 1.0f;
+	m_viewport.TopLeftX = 0.0f;
+	m_viewport.TopLeftY = 0.0f;
+	m_deviceContext->RSSetViewports(1, &m_viewport);
+
+	// 8. 변경된 종횡비(Aspect Ratio)를 바탕으로 3D 투영 행렬 및 2D 직교 투영 행렬 재계산
+	float fieldOfView = 3.141592654f / 4.0f;
+	float screenAspect = (float)screenWidth / (float)screenHeight;
+	m_projectionMatrix = XMMatrixPerspectiveFovLH(fieldOfView, screenAspect, screenNear, screenDepth);
+	m_orthoMatrix = XMMatrixOrthographicLH((float)screenWidth, (float)screenHeight, screenNear, screenDepth);
+
+	return true;
+}
+

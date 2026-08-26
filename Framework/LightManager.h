@@ -29,6 +29,20 @@ public:
     DirectX::XMFLOAT4 GetSpecularColor() const { return m_specularColor; }
     float GetSpecularPower() const { return m_specularPower; }
 
+    // Directional Light Setters (ImGui 실시간 제어용)
+    void SetAmbient(const DirectX::XMFLOAT4& ambient) { m_dirAmbient = ambient; }
+    void SetDiffuse(const DirectX::XMFLOAT4& diffuse) { m_dirDiffuse = diffuse; }
+    void SetDirection(const DirectX::XMFLOAT3& dir) { m_dirDirection = dir; }
+    void SetSpecularColor(const DirectX::XMFLOAT4& spec) { m_specularColor = spec; }
+    void SetSpecularPower(float power) { m_specularPower = power; }
+
+    // ImGui에서 포인터/레퍼런스로 직접 조작할 수 있는 Getter
+    DirectX::XMFLOAT4* GetAmbientPtr() { return &m_dirAmbient; }
+    DirectX::XMFLOAT4* GetDiffusePtr() { return &m_dirDiffuse; }
+    DirectX::XMFLOAT3* GetDirectionPtr() { return &m_dirDirection; }
+    DirectX::XMFLOAT4* GetSpecularColorPtr() { return &m_specularColor; }
+    float* GetSpecularPowerPtr() { return &m_specularPower; }
+
     // Point Light Getters
     const DirectX::XMFLOAT4* GetPointPositions() const { return m_pointPos; }
     const DirectX::XMFLOAT4* GetPointDiffuse() const { return m_pointDiff; }
@@ -40,11 +54,35 @@ public:
     float GetAttenKq() const { return m_attenKq; }
     float GetIntensityScale() const { return m_pointIntensityScale; }
 
-    // Toggle Getters
+    // Toggle Getters & Setters
     bool IsAmbientEnabled() const { return m_enableAmbient; }
     bool IsDiffuseEnabled() const { return m_enableDiffuse; }
     bool IsSpecularEnabled() const { return m_enableSpecular; }
     bool IsPointLightEnabled() const { return m_enablePointLight; }
+
+    bool* GetAmbientEnabledPtr() { return &m_enableAmbient; }
+    bool* GetDiffuseEnabledPtr() { return &m_enableDiffuse; }
+    bool* GetSpecularEnabledPtr() { return &m_enableSpecular; }
+    bool* GetPointLightEnabledPtr() { return &m_enablePointLight; }
+
+    // ===== 실시간 섀도우 매핑(Shadow Mapping) 관련 메서드 =====
+    void GenerateLightViewMatrix(DirectX::XMFLOAT3 sceneCenter = DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f), float distance = 50.0f);
+    void GenerateLightProjectionMatrix(float sceneWidth = 60.0f, float sceneHeight = 60.0f, float nearZ = 1.0f, float farZ = 120.0f);
+
+    void GetLightViewMatrix(DirectX::XMMATRIX& lightView) const { lightView = m_lightViewMatrix; }
+    void GetLightProjectionMatrix(DirectX::XMMATRIX& lightProj) const { lightProj = m_lightProjMatrix; }
+
+    float* GetShadowBiasPtr() { return &m_shadowBias; }
+    float GetShadowBias() const { return m_shadowBias; }
+    void SetShadowBias(float bias) { m_shadowBias = bias; }
+
+    bool* GetShadowEnabledPtr() { return &m_shadowEnabled; }
+    bool IsShadowEnabled() const { return m_shadowEnabled; }
+    void SetShadowEnabled(bool enabled) { m_shadowEnabled = enabled; }
+
+    bool* GetPcfEnabledPtr() { return &m_pcfEnabled; }
+    bool IsPcfEnabled() const { return m_pcfEnabled; }
+    void SetPcfEnabled(bool enabled) { m_pcfEnabled = enabled; }
 
 private:
     void InitDefaults();
@@ -77,4 +115,11 @@ private:
     bool m_enableSpecular = true;
     bool m_enablePointLight = true;
     bool m_prevPToggle = false;
+
+    // Shadow Mapping
+    DirectX::XMMATRIX m_lightViewMatrix = DirectX::XMMatrixIdentity();
+    DirectX::XMMATRIX m_lightProjMatrix = DirectX::XMMatrixIdentity();
+    float m_shadowBias = 0.0015f;
+    bool m_shadowEnabled = true;
+    bool m_pcfEnabled = true;
 };

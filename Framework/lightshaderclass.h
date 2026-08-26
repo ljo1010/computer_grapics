@@ -15,7 +15,7 @@
 using namespace std;
 using namespace DirectX;
 
-// HLSL°ú µ¿ÀÏÇÏ°Ô À¯Áö
+// HLSLê³¼ ë™ì¼í•˜ê²Œ ìœ ì§€
 #ifndef NUM_LIGHTS
 #define NUM_LIGHTS 3
 #endif
@@ -69,16 +69,27 @@ private:
         float kc;   // constant
         float kl;   // linear
         float kq;   // quadratic
-        float pointIntensityScale; // Å° 8/9·Î Á¶Àı
+        float pointIntensityScale; // í‚¤ 8/9ë¡œ ì¡°ì ˆ
     };
 
     // HLSL: ToggleBuffer
     struct ToggleBufferType
     {
-        int enableAmbient;   // Å° 5
-        int enableDiffuse;   // Å° 6
-        int enableSpecular;  // Å° 7
+        int enableAmbient;   // í‚¤ 5
+        int enableDiffuse;   // í‚¤ 6
+        int enableSpecular;  // í‚¤ 7
         int _pad;            // 16-byte align
+    };
+
+    // HLSL: ShadowBuffer (ì‹¤ì‹œê°„ ì„€ë„ìš° ë§¤í•‘)
+    struct ShadowBufferType
+    {
+        XMMATRIX lightViewMatrix;
+        XMMATRIX lightProjectionMatrix;
+        float shadowBias;
+        int enableShadow;
+        int enablePCF;
+        float _shadowPad;
     };
 
 public:
@@ -119,14 +130,21 @@ public:
         // toggles
         bool enableAmbient,
         bool enableDiffuse,
-        bool enableSpecular);
+        bool enableSpecular,
+        // Shadow Mapping (ê·¸ë¦¼ì)
+        ID3D11ShaderResourceView* shadowMapSRV = nullptr,
+        XMMATRIX lightViewMatrix = XMMatrixIdentity(),
+        XMMATRIX lightProjMatrix = XMMatrixIdentity(),
+        float shadowBias = 0.0015f,
+        bool enableShadow = true,
+        bool enablePCF = true);
 
 private:
     bool InitializeShader(ID3D11Device*, HWND, const WCHAR* hlslFile);
     void ShutdownShader();
     void OutputShaderErrorMessage(ID3D10Blob*, HWND, const WCHAR*);
 
-    // ±âÁ¸ ÆÄ¶ó¹ÌÅÍ ¼Â¾÷
+    // ê¸°ì¡´ íŒŒë¼ë¯¸í„° ì…‹ì—…
     bool SetShaderParameters(ID3D11DeviceContext*,
         XMMATRIX, XMMATRIX, XMMATRIX,
         ID3D11ShaderResourceView*,
@@ -137,7 +155,7 @@ private:
         XMFLOAT4 specularColor,
         float    specularPower);
 
-    // È®Àå ÆÄ¶ó¹ÌÅÍ ¼Â¾÷
+    // í™•ì¥ íŒŒë¼ë¯¸í„° ì…‹ì—…
     bool SetShaderParametersEx(ID3D11DeviceContext*,
         XMMATRIX, XMMATRIX, XMMATRIX,
         ID3D11ShaderResourceView*,
@@ -158,7 +176,14 @@ private:
         // toggles
         bool enableAmbient,
         bool enableDiffuse,
-        bool enableSpecular);
+        bool enableSpecular,
+        // Shadow Mapping (ê·¸ë¦¼ì)
+        ID3D11ShaderResourceView* shadowMapSRV,
+        XMMATRIX lightViewMatrix,
+        XMMATRIX lightProjMatrix,
+        float shadowBias,
+        bool enableShadow,
+        bool enablePCF);
 
     void RenderShader(ID3D11DeviceContext*, int);
 
@@ -174,11 +199,12 @@ private:
     ID3D11Buffer* m_cameraBuffer = nullptr; // CameraBufferType
     ID3D11Buffer* m_lightBuffer = nullptr; // LightBufferType (directional)
 
-    // Ãß°¡µÈ ¹öÆÛµé (ÅëÇÕ ¼ÎÀÌ´õ¿ë)
+    // ì¶”ê°€ëœ ë²„í¼ë“¤ (í†µí•© ì…°ì´ë”ìš©)
     ID3D11Buffer* m_pointPosBuffer = nullptr; // PointLightPositionBufferType
     ID3D11Buffer* m_pointColorBuffer = nullptr; // PointLightColorBufferType
     ID3D11Buffer* m_attenuationBuffer = nullptr; // AttenuationBufferType
     ID3D11Buffer* m_toggleBuffer = nullptr; // ToggleBufferType
+    ID3D11Buffer* m_shadowBuffer = nullptr; // ShadowBufferType (ì‹¤ì‹œê°„ ì„€ë„ìš°)
 };
 
 #endif // _LIGHTSHADERCLASS_H_

@@ -255,8 +255,9 @@ bool SkinShaderClass::SetShaderParameters(
     dc->Unmap(m_matrixBuffer, 0);
     dc->VSSetConstantBuffers(0, 1, &m_matrixBuffer);
 
-    // ==== [2] ���⼭ bones ����� �α� �߰� =============================
+    // ==== [2] bones 로그 출력 부분 (주석 처리) =============================
     size_t boneCount = bones.size();
+    /*
     char buf[256];
     sprintf_s(buf, "[SkinShader] bones.size() = %zu\n", boneCount);
     OutputDebugStringA(buf);
@@ -271,6 +272,7 @@ bool SkinShaderClass::SetShaderParameters(
             m._21, m._22, m._23, m._24);
         OutputDebugStringA(buf);
     }
+    */
 
     // b1: bones
     result = dc->Map(m_boneBuffer, 0,

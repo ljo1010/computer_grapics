@@ -24,3 +24,5 @@ Win32/
 *.iobj
 *.ipdb
 *.exp
+
+imgui.ini

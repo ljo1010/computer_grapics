@@ -94,3 +94,28 @@ void LightManager::TogglePointLight()
 
     m_prevPToggle = isDown;
 }
+
+// 섀도우 맵 렌더링용 광원 뷰 행렬 생성 (씬 중심을 바라보는 Directional Light 시점)
+void LightManager::GenerateLightViewMatrix(DirectX::XMFLOAT3 sceneCenter, float distance)
+{
+    using namespace DirectX;
+    XMVECTOR dirVec = XMVector3Normalize(XMLoadFloat3(&m_dirDirection));
+    XMVECTOR centerVec = XMLoadFloat3(&sceneCenter);
+    // 빛의 진행 방향 반대편으로 distance만큼 떨어진 위치에 가상 카메라 배치
+    XMVECTOR lightPos = centerVec - dirVec * distance;
+    XMVECTOR upVec = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+
+    // 광원 방향이 수직(y축과 평행)일 경우 up 벡터 조정
+    if (fabs(m_dirDirection.x) < 0.001f && fabs(m_dirDirection.z) < 0.001f)
+    {
+        upVec = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
+    }
+
+    m_lightViewMatrix = XMMatrixLookAtLH(lightPos, centerVec, upVec);
+}
+
+// 섀도우 맵 렌더링용 직교 투영 행렬 생성 (방향성 광원용 직교 투영 볼륨)
+void LightManager::GenerateLightProjectionMatrix(float sceneWidth, float sceneHeight, float nearZ, float farZ)
+{
+    m_lightProjMatrix = DirectX::XMMatrixOrthographicLH(sceneWidth, sceneHeight, nearZ, farZ);
+}

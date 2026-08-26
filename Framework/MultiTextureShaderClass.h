@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include <d3d11.h>
 #include <DirectXMath.h>
 #include <string>
@@ -28,7 +28,17 @@ public:
         float pointRange0,
         const DirectX::XMFLOAT3& pointPos1,
         const DirectX::XMFLOAT4& pointColor1,
-        float pointRange1
+        float pointRange1,
+        // Directional Light & Shadow Mapping
+        const DirectX::XMFLOAT4& dirAmbient = DirectX::XMFLOAT4(0, 0, 0, 1),
+        const DirectX::XMFLOAT4& dirDiffuse = DirectX::XMFLOAT4(1, 1, 1, 1),
+        const DirectX::XMFLOAT3& dirDirection = DirectX::XMFLOAT3(0, -1, 0),
+        ID3D11ShaderResourceView* shadowMapSRV = nullptr,
+        const DirectX::XMMATRIX& lightView = DirectX::XMMatrixIdentity(),
+        const DirectX::XMMATRIX& lightProj = DirectX::XMMatrixIdentity(),
+        float shadowBias = 0.0015f,
+        bool enableShadow = true,
+        bool enablePCF = true
     );
 
 private:
@@ -50,7 +60,16 @@ private:
         float pointRange0,
         const DirectX::XMFLOAT3& pointPos1,
         const DirectX::XMFLOAT4& pointColor1,
-        float pointRange1);
+        float pointRange1,
+        const DirectX::XMFLOAT4& dirAmbient,
+        const DirectX::XMFLOAT4& dirDiffuse,
+        const DirectX::XMFLOAT3& dirDirection,
+        ID3D11ShaderResourceView* shadowMapSRV,
+        const DirectX::XMMATRIX& lightView,
+        const DirectX::XMMATRIX& lightProj,
+        float shadowBias,
+        bool enableShadow,
+        bool enablePCF);
 
     void RenderShader(ID3D11DeviceContext* dc, int indexCount);
 
@@ -69,7 +88,6 @@ private:
         DirectX::XMFLOAT2 pad;
     };
 
-    // ¡Ú ambient + point light 2°³
     struct LightBufferType
     {
         DirectX::XMFLOAT4 ambientColor;
@@ -85,11 +103,31 @@ private:
         DirectX::XMFLOAT4 pointColor1;
     };
 
+    struct ShadowBufferType
+    {
+        DirectX::XMMATRIX lightViewMatrix;
+        DirectX::XMMATRIX lightProjectionMatrix;
+        float shadowBias;
+        int enableShadow;
+        int enablePCF;
+        float _shadowPad;
+    };
+
+    struct DirLightBufferType
+    {
+        DirectX::XMFLOAT4 dirAmbient;
+        DirectX::XMFLOAT4 dirDiffuse;
+        DirectX::XMFLOAT3 dirDirection;
+        float _dirPad;
+    };
+
     ID3D11VertexShader* m_vertexShader = nullptr;
     ID3D11PixelShader* m_pixelShader = nullptr;
     ID3D11InputLayout* m_layout = nullptr;
     ID3D11Buffer* m_matrixBuffer = nullptr;
     ID3D11Buffer* m_blendBuffer = nullptr;
     ID3D11Buffer* m_lightBuffer = nullptr;
+    ID3D11Buffer* m_shadowBuffer = nullptr;
+    ID3D11Buffer* m_dirLightBuffer = nullptr;
     ID3D11SamplerState* m_samplerState = nullptr;
 };

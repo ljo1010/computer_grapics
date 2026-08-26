@@ -35,7 +35,7 @@ LightShaderClass::~LightShaderClass()
 
 bool LightShaderClass::Initialize(ID3D11Device* device, HWND hwnd)
 {
-    // ÅëÇÕ HLSL ·Îµå °æ·Î
+    // í†µí•© HLSL ë¡œë“œ ê²½ë¡œ
     return InitializeShader(device, hwnd, L"./data/mergephongpoint.hlsl");
 }
 
@@ -54,7 +54,7 @@ bool LightShaderClass::Render(ID3D11DeviceContext* deviceContext, int indexCount
     XMFLOAT4 specularColor,
     float    specularPower)
 {
-    // ·¹°Å½Ã °æ·Î: Æ÷ÀÎÆ® ¶óÀÌÆ®/°¨¼è/Åä±ÛÀº ±âº»°ªÀ¸·Î Ã¤¿ö ¼ÎÀÌ´õ¿¡ Àü´Ş
+    // ë ˆê±°ì‹œ ê²½ë¡œ: í¬ì¸íŠ¸ ë¼ì´íŠ¸/ê°ì‡ /í† ê¸€ì€ ê¸°ë³¸ê°’ìœ¼ë¡œ ì±„ì›Œ ì…°ì´ë”ì— ì „ë‹¬
     if (!SetShaderParameters(deviceContext, worldMatrix, viewMatrix, projectionMatrix,
         texture, cameraPosition, ambientColor, diffuseColor,
         lightDirection, specularColor, specularPower))
@@ -84,14 +84,22 @@ bool LightShaderClass::RenderEx(ID3D11DeviceContext* deviceContext, int indexCou
     // toggles
     bool enableAmbient,
     bool enableDiffuse,
-    bool enableSpecular)
+    bool enableSpecular,
+    // Shadow Mapping
+    ID3D11ShaderResourceView* shadowMapSRV,
+    XMMATRIX lightViewMatrix,
+    XMMATRIX lightProjMatrix,
+    float shadowBias,
+    bool enableShadow,
+    bool enablePCF)
 {
     if (!SetShaderParametersEx(deviceContext, worldMatrix, viewMatrix, projectionMatrix,
         texture, cameraPosition, ambientColor, directionalDiffuse,
         lightDirection, specularColor, specularPower,
         pointPositions, pointDiffuse, pointCount,
         kc, kl, kq, pointIntensityScale,
-        enableAmbient, enableDiffuse, enableSpecular))
+        enableAmbient, enableDiffuse, enableSpecular,
+        shadowMapSRV, lightViewMatrix, lightProjMatrix, shadowBias, enableShadow, enablePCF))
         return false;
 
     RenderShader(deviceContext, indexCount);
@@ -139,7 +147,7 @@ bool LightShaderClass::InitializeShader(ID3D11Device* device, HWND hwnd, const W
         NULL, &m_pixelShader);
     if (FAILED(result)) return false;
 
-    // 3) Input layout (POSITION, TEXCOORD, NORMAL) -> VS outputs extra TEXCOORDs but inputs ±×´ë·Î
+    // 3) Input layout (POSITION, TEXCOORD, NORMAL) -> VS outputs extra TEXCOORDs but inputs ê·¸ëŒ€ë¡œ
     D3D11_INPUT_ELEMENT_DESC polygonLayout[3] = {};
     polygonLayout[0] = { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,
                          0, D3D11_INPUT_PER_VERTEX_DATA, 0 };
@@ -211,9 +219,14 @@ bool LightShaderClass::InitializeShader(ID3D11Device* device, HWND hwnd, const W
     result = device->CreateBuffer(&desc, nullptr, &m_attenuationBuffer);
     if (FAILED(result)) return false;
 
-    // Toggle (PS slot 3)
+    // Toggle (PS slot 6)
     desc.ByteWidth = sizeof(ToggleBufferType);
     result = device->CreateBuffer(&desc, nullptr, &m_toggleBuffer);
+    if (FAILED(result)) return false;
+
+    // ShadowBuffer (VS & PS slot 7)
+    desc.ByteWidth = sizeof(ShadowBufferType);
+    result = device->CreateBuffer(&desc, nullptr, &m_shadowBuffer);
     if (FAILED(result)) return false;
 
     return true;
@@ -223,6 +236,7 @@ void LightShaderClass::ShutdownShader()
 {
     auto safeRelease = [](auto*& p) { if (p) { p->Release(); p = nullptr; } };
 
+    safeRelease(m_shadowBuffer);
     safeRelease(m_toggleBuffer);
     safeRelease(m_attenuationBuffer);
     safeRelease(m_pointColorBuffer);
@@ -262,7 +276,7 @@ bool LightShaderClass::SetShaderParameters(ID3D11DeviceContext* deviceContext,
     XMFLOAT4 specularColor,
     float    specularPower)
 {
-    // °øÅë: Çà·Ä transpose
+    // ê³µí†µ: í–‰ë ¬ transpose
     worldMatrix = XMMatrixTranspose(worldMatrix);
     viewMatrix = XMMatrixTranspose(viewMatrix);
     projectionMatrix = XMMatrixTranspose(projectionMatrix);
@@ -318,7 +332,7 @@ bool LightShaderClass::SetShaderParameters(ID3D11DeviceContext* deviceContext,
         deviceContext->VSSetConstantBuffers(2, 1, &m_pointPosBuffer);
     }
 
-    // PS slot 1: Point colors (all zero -> ¿µÇâ ¾øÀ½)
+    // PS slot 1: Point colors (all zero -> ì˜í–¥ ì—†ìŒ)
     {
         PointLightColorBufferType temp = {};
         for (int i = 0; i < NUM_LIGHTS; ++i) temp.pointDiffuse[i] = XMFLOAT4(0, 0, 0, 1);
@@ -376,7 +390,14 @@ bool LightShaderClass::SetShaderParametersEx(ID3D11DeviceContext* deviceContext,
     // toggles
     bool enableAmbient,
     bool enableDiffuse,
-    bool enableSpecular)
+    bool enableSpecular,
+    // Shadow Mapping
+    ID3D11ShaderResourceView* shadowMapSRV,
+    XMMATRIX lightViewMatrix,
+    XMMATRIX lightProjMatrix,
+    float shadowBias,
+    bool enableShadow,
+    bool enablePCF)
 {
     worldMatrix = XMMatrixTranspose(worldMatrix);
     viewMatrix = XMMatrixTranspose(viewMatrix);
@@ -385,7 +406,6 @@ bool LightShaderClass::SetShaderParametersEx(ID3D11DeviceContext* deviceContext,
     HRESULT hr;
     D3D11_MAPPED_SUBRESOURCE mapped;
 
-    //VS: vertex shader PS: pixel shader
     // VS slot 0: Matrix
     hr = deviceContext->Map(m_matrixBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
     if (FAILED(hr)) return false;
@@ -409,7 +429,7 @@ bool LightShaderClass::SetShaderParametersEx(ID3D11DeviceContext* deviceContext,
     deviceContext->Unmap(m_cameraBuffer, 0);
     deviceContext->VSSetConstantBuffers(1, 1, &m_cameraBuffer);
 
-    // PS slot 0: Dir Light
+    // PS slot 2: Dir Light
     hr = deviceContext->Map(m_lightBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
     if (FAILED(hr)) return false;
     {
@@ -421,9 +441,9 @@ bool LightShaderClass::SetShaderParametersEx(ID3D11DeviceContext* deviceContext,
         p->specularPower = specularPower;
     }
     deviceContext->Unmap(m_lightBuffer, 0);
-    deviceContext->PSSetConstantBuffers(0, 1, &m_lightBuffer);
+    deviceContext->PSSetConstantBuffers(2, 1, &m_lightBuffer);
 
-    // VS slot 2: Point positions
+    // VS slot 2 / PS slot 3: Point positions
     {
         PointLightPositionBufferType temp = {};
         int n = min(pointCount, NUM_LIGHTS);
@@ -435,9 +455,10 @@ bool LightShaderClass::SetShaderParametersEx(ID3D11DeviceContext* deviceContext,
         memcpy(mapped.pData, &temp, sizeof(temp));
         deviceContext->Unmap(m_pointPosBuffer, 0);
         deviceContext->VSSetConstantBuffers(2, 1, &m_pointPosBuffer);
+        deviceContext->PSSetConstantBuffers(3, 1, &m_pointPosBuffer);
     }
 
-    // PS slot 1: Point colors
+    // PS slot 4: Point colors
     {
         PointLightColorBufferType temp = {};
         int n = min(pointCount, NUM_LIGHTS);
@@ -448,20 +469,20 @@ bool LightShaderClass::SetShaderParametersEx(ID3D11DeviceContext* deviceContext,
         if (FAILED(hr)) return false;
         memcpy(mapped.pData, &temp, sizeof(temp));
         deviceContext->Unmap(m_pointColorBuffer, 0);
-        deviceContext->PSSetConstantBuffers(1, 1, &m_pointColorBuffer);
+        deviceContext->PSSetConstantBuffers(4, 1, &m_pointColorBuffer);
     }
 
-    // PS slot 2: Attenuation
+    // PS slot 5: Attenuation
     {
         AttenuationBufferType temp = { kc, kl, kq, pointIntensityScale };
         hr = deviceContext->Map(m_attenuationBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
         if (FAILED(hr)) return false;
         memcpy(mapped.pData, &temp, sizeof(temp));
         deviceContext->Unmap(m_attenuationBuffer, 0);
-        deviceContext->PSSetConstantBuffers(2, 1, &m_attenuationBuffer);
+        deviceContext->PSSetConstantBuffers(5, 1, &m_attenuationBuffer);
     }
 
-    // PS slot 3: Toggles
+    // PS slot 6: Toggles
     {
         ToggleBufferType temp = { enableAmbient ? 1 : 0,
                                   enableDiffuse ? 1 : 0,
@@ -471,11 +492,35 @@ bool LightShaderClass::SetShaderParametersEx(ID3D11DeviceContext* deviceContext,
         if (FAILED(hr)) return false;
         memcpy(mapped.pData, &temp, sizeof(temp));
         deviceContext->Unmap(m_toggleBuffer, 0);
-        deviceContext->PSSetConstantBuffers(3, 1, &m_toggleBuffer);
+        deviceContext->PSSetConstantBuffers(6, 1, &m_toggleBuffer);
     }
 
-    // Texture & Sampler
+    // VS & PS slot 7: Shadow Buffer
+    if (m_shadowBuffer)
+    {
+        hr = deviceContext->Map(m_shadowBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+        if (SUCCEEDED(hr))
+        {
+            ShadowBufferType* s = (ShadowBufferType*)mapped.pData;
+            s->lightViewMatrix = XMMatrixTranspose(lightViewMatrix);
+            s->lightProjectionMatrix = XMMatrixTranspose(lightProjMatrix);
+            s->shadowBias = shadowBias;
+            s->enableShadow = enableShadow ? 1 : 0;
+            s->enablePCF = enablePCF ? 1 : 0;
+            s->_shadowPad = 0.0f;
+            deviceContext->Unmap(m_shadowBuffer, 0);
+
+            deviceContext->VSSetConstantBuffers(7, 1, &m_shadowBuffer);
+            deviceContext->PSSetConstantBuffers(7, 1, &m_shadowBuffer);
+        }
+    }
+
+    // Texture (slot 0: Albedo, slot 3: Shadow Map)
     deviceContext->PSSetShaderResources(0, 1, &texture);
+    if (shadowMapSRV)
+    {
+        deviceContext->PSSetShaderResources(3, 1, &shadowMapSRV);
+    }
 
     return true;
 }

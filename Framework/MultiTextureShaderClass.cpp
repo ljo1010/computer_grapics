@@ -1,17 +1,20 @@
-// MultiTextureShaderClass.cpp
-#include "MultiTextureShaderClass.h"
+ï»¿#include "MultiTextureShaderClass.h"
 #include <d3dcompiler.h>
-#include <windows.h>
-#pragma comment(lib, "d3dcompiler.lib")
 
 using namespace DirectX;
 
-MultiTextureShaderClass::MultiTextureShaderClass() {}
-MultiTextureShaderClass::~MultiTextureShaderClass() { Shutdown(); }
-
-bool MultiTextureShaderClass::Initialize(ID3D11Device* device, HWND hwnd, const std::wstring& hlslPath)
+MultiTextureShaderClass::MultiTextureShaderClass()
 {
-    return InitializeShader(device, hwnd, hlslPath);
+}
+
+MultiTextureShaderClass::~MultiTextureShaderClass()
+{
+    Shutdown();
+}
+
+bool MultiTextureShaderClass::Initialize(ID3D11Device* device, HWND hwnd, const std::wstring& file)
+{
+    return InitializeShader(device, hwnd, file);
 }
 
 void MultiTextureShaderClass::Shutdown()
@@ -20,7 +23,7 @@ void MultiTextureShaderClass::Shutdown()
 }
 
 // =============================
-// Render (point light 2°³)
+// Render (ì§€í˜• + ì¡°ëª… + ì‹¤ì‹œê°„ ì„€ë„ìš°)
 // =============================
 bool MultiTextureShaderClass::Render(
     ID3D11DeviceContext* dc, int indexCount,
@@ -35,14 +38,26 @@ bool MultiTextureShaderClass::Render(
     float pointRange0,
     const XMFLOAT3& pointPos1,
     const XMFLOAT4& pointColor1,
-    float pointRange1)
+    float pointRange1,
+    const XMFLOAT4& dirAmbient,
+    const XMFLOAT4& dirDiffuse,
+    const XMFLOAT3& dirDirection,
+    ID3D11ShaderResourceView* shadowMapSRV,
+    const XMMATRIX& lightView,
+    const XMMATRIX& lightProj,
+    float shadowBias,
+    bool enableShadow,
+    bool enablePCF)
 {
     if (!SetShaderParameters(dc, world, view, proj,
         tex0, tex1, texAlpha,
         alphaStrength,
         ambient,
         pointPos0, pointColor0, pointRange0,
-        pointPos1, pointColor1, pointRange1))
+        pointPos1, pointColor1, pointRange1,
+        dirAmbient, dirDiffuse, dirDirection,
+        shadowMapSRV, lightView, lightProj,
+        shadowBias, enableShadow, enablePCF))
         return false;
 
     RenderShader(dc, indexCount);
@@ -65,7 +80,16 @@ bool MultiTextureShaderClass::SetShaderParameters(
     float pointRange0,
     const XMFLOAT3& pointPos1,
     const XMFLOAT4& pointColor1,
-    float pointRange1)
+    float pointRange1,
+    const XMFLOAT4& dirAmbient,
+    const XMFLOAT4& dirDiffuse,
+    const XMFLOAT3& dirDirection,
+    ID3D11ShaderResourceView* shadowMapSRV,
+    const XMMATRIX& lightView,
+    const XMMATRIX& lightProj,
+    float shadowBias,
+    bool enableShadow,
+    bool enablePCF)
 {
     // --- b0 : MatrixBuffer ---
     {
@@ -99,7 +123,7 @@ bool MultiTextureShaderClass::SetShaderParameters(
         dc->PSSetConstantBuffers(1, 1, &m_blendBuffer);
     }
 
-    // --- b2 : LightBuffer (ambient + point2°³) ---
+    // --- b2 : LightBuffer (ambient + point2ê°œ) ---
     {
         D3D11_MAPPED_SUBRESOURCE map{};
         if (FAILED(dc->Map(m_lightBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &map)))
@@ -120,18 +144,55 @@ bool MultiTextureShaderClass::SetShaderParameters(
         dc->PSSetConstantBuffers(2, 1, &m_lightBuffer);
     }
 
-    // --- ÅØ½ºÃ³ & »ùÇÃ·¯ ---
+    // --- b3 : ShadowBuffer ---
+    if (m_shadowBuffer)
+    {
+        D3D11_MAPPED_SUBRESOURCE map{};
+        if (SUCCEEDED(dc->Map(m_shadowBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &map)))
+        {
+            auto* sb = reinterpret_cast<ShadowBufferType*>(map.pData);
+            sb->lightViewMatrix = XMMatrixTranspose(lightView);
+            sb->lightProjectionMatrix = XMMatrixTranspose(lightProj);
+            sb->shadowBias = shadowBias;
+            sb->enableShadow = enableShadow ? 1 : 0;
+            sb->enablePCF = enablePCF ? 1 : 0;
+            sb->_shadowPad = 0.0f;
+            dc->Unmap(m_shadowBuffer, 0);
+
+            dc->PSSetConstantBuffers(3, 1, &m_shadowBuffer);
+        }
+    }
+
+    // --- b4 : DirLightBuffer ---
+    if (m_dirLightBuffer)
+    {
+        D3D11_MAPPED_SUBRESOURCE map{};
+        if (SUCCEEDED(dc->Map(m_dirLightBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &map)))
+        {
+            auto* dlb = reinterpret_cast<DirLightBufferType*>(map.pData);
+            dlb->dirAmbient = dirAmbient;
+            dlb->dirDiffuse = dirDiffuse;
+            dlb->dirDirection = dirDirection;
+            dlb->_dirPad = 0.0f;
+            dc->Unmap(m_dirLightBuffer, 0);
+
+            dc->PSSetConstantBuffers(4, 1, &m_dirLightBuffer);
+        }
+    }
+
+    // --- í…ìŠ¤ì²˜ & ìƒ˜í”ŒëŸ¬ (t0: dirt, t1: dungeon, t2: alpha, t3: shadowMap) ---
     {
         ID3D11ShaderResourceView* srvs[3] = { tex0, tex1, texAlpha };
         dc->PSSetShaderResources(0, 3, srvs);
+        if (shadowMapSRV)
+        {
+            dc->PSSetShaderResources(3, 1, &shadowMapSRV);
+        }
         dc->PSSetSamplers(0, 1, &m_samplerState);
     }
 
     return true;
 }
-
-
-
 
 // =============================
 // InitializeShader
@@ -171,11 +232,6 @@ bool MultiTextureShaderClass::InitializeShader(ID3D11Device* device, HWND hwnd, 
     device->CreateVertexShader(vs->GetBufferPointer(), vs->GetBufferSize(), nullptr, &m_vertexShader);
     device->CreatePixelShader(ps->GetBufferPointer(), ps->GetBufferSize(), nullptr, &m_pixelShader);
 
-    // planeÀº ÀÎ½ºÅÏ½Ì ¾È ¾²´Ï±î POSITION/TEXCOORD¸¸ ÀÖÀ¸¸é ÃæºÐ
-    //D3D11_INPUT_ELEMENT_DESC layout[] = {
-    //    { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,  D3D11_INPUT_PER_VERTEX_DATA, 0 },
-    //    { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,    0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-    //};
     D3D11_INPUT_ELEMENT_DESC layout[] =
     {
         { "POSITION",   0, DXGI_FORMAT_R32G32B32_FLOAT,   0, 0,                           D3D11_INPUT_PER_VERTEX_DATA, 0 },
@@ -183,7 +239,6 @@ bool MultiTextureShaderClass::InitializeShader(ID3D11Device* device, HWND hwnd, 
         { "BONEID",     0, DXGI_FORMAT_R32G32B32A32_UINT, 0, 20,                          D3D11_INPUT_PER_VERTEX_DATA, 0 },
         { "WEIGHT",     0, DXGI_FORMAT_R32G32B32A32_FLOAT,0, 36,                          D3D11_INPUT_PER_VERTEX_DATA, 0 },
     };
-
 
     device->CreateInputLayout(layout, 2, vs->GetBufferPointer(), vs->GetBufferSize(), &m_layout);
 
@@ -202,9 +257,16 @@ bool MultiTextureShaderClass::InitializeShader(ID3D11Device* device, HWND hwnd, 
     bd.ByteWidth = sizeof(BlendBufferType);
     device->CreateBuffer(&bd, nullptr, &m_blendBuffer);
 
-    // ¡Ú Light buffer (b2)
     bd.ByteWidth = sizeof(LightBufferType);
     device->CreateBuffer(&bd, nullptr, &m_lightBuffer);
+
+    // Shadow buffer (b3)
+    bd.ByteWidth = sizeof(ShadowBufferType);
+    device->CreateBuffer(&bd, nullptr, &m_shadowBuffer);
+
+    // Dir light buffer (b4)
+    bd.ByteWidth = sizeof(DirLightBufferType);
+    device->CreateBuffer(&bd, nullptr, &m_dirLightBuffer);
 
     // ---- sampler
     D3D11_SAMPLER_DESC sd{};
@@ -217,7 +279,6 @@ bool MultiTextureShaderClass::InitializeShader(ID3D11Device* device, HWND hwnd, 
     sd.MaxLOD = D3D11_FLOAT32_MAX;
     device->CreateSamplerState(&sd, &m_samplerState);
 
-    OutputDebugStringW((L"[MultiTextureShader] Loaded: " + file + L"\n").c_str());
     return true;
 }
 
@@ -226,13 +287,15 @@ bool MultiTextureShaderClass::InitializeShader(ID3D11Device* device, HWND hwnd, 
 // =============================
 void MultiTextureShaderClass::ShutdownShader()
 {
-    if (m_samplerState) m_samplerState->Release(), m_samplerState = nullptr;
-    if (m_lightBuffer)  m_lightBuffer->Release(), m_lightBuffer = nullptr;
-    if (m_blendBuffer)  m_blendBuffer->Release(), m_blendBuffer = nullptr;
-    if (m_matrixBuffer) m_matrixBuffer->Release(), m_matrixBuffer = nullptr;
-    if (m_layout)       m_layout->Release(), m_layout = nullptr;
-    if (m_pixelShader)  m_pixelShader->Release(), m_pixelShader = nullptr;
-    if (m_vertexShader) m_vertexShader->Release(), m_vertexShader = nullptr;
+    if (m_samplerState)   m_samplerState->Release(), m_samplerState = nullptr;
+    if (m_dirLightBuffer) m_dirLightBuffer->Release(), m_dirLightBuffer = nullptr;
+    if (m_shadowBuffer)   m_shadowBuffer->Release(), m_shadowBuffer = nullptr;
+    if (m_lightBuffer)    m_lightBuffer->Release(), m_lightBuffer = nullptr;
+    if (m_blendBuffer)    m_blendBuffer->Release(), m_blendBuffer = nullptr;
+    if (m_matrixBuffer)   m_matrixBuffer->Release(), m_matrixBuffer = nullptr;
+    if (m_layout)         m_layout->Release(), m_layout = nullptr;
+    if (m_pixelShader)    m_pixelShader->Release(), m_pixelShader = nullptr;
+    if (m_vertexShader)   m_vertexShader->Release(), m_vertexShader = nullptr;
 }
 
 // =============================

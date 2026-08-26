@@ -37,6 +37,12 @@ public:
 	bool Initialize(int, int, bool, HWND, bool, float, float);
 	void Shutdown();
 
+	// 창 크기 변경 시 스왑체인/RTV/DSV/뷰포트/투영행렬을 동적으로 갱신하는 함수
+	bool Resize(int screenWidth, int screenHeight, float screenNear, float screenDepth);
+
+	// 백버퍼 렌더타깃 및 기본 뷰포트 복원 함수
+	void SetBackBufferRenderTarget();
+
 	void BeginScene(float, float, float, float);
 	void EndScene();
 
@@ -55,6 +61,9 @@ public:
 	void TurnOnAlphaBlending();
 	void TurnOffAlphaBlending();
 
+	// 와이어프레임 렌더링 모드 토글 함수
+	void SetWireframe(bool enable);
+
 private:
 	bool m_vsync_enabled;
 	int m_videoCardMemory;
@@ -67,6 +76,8 @@ private:
 	ID3D11DepthStencilState* m_depthStencilState;
 	ID3D11DepthStencilView* m_depthStencilView;
 	ID3D11RasterizerState* m_rasterState;
+	ID3D11RasterizerState* m_rasterStateWireframe; // 와이어프레임용 래스터라이저 상태
+	D3D11_VIEWPORT m_viewport; // 기본 화면 뷰포트
 	XMMATRIX m_projectionMatrix;
 	XMMATRIX m_worldMatrix;
 	XMMATRIX m_orthoMatrix;

@@ -1,11 +1,16 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Filename: graphicsclass.cpp
-// Description: Refactored to use specialized manager classes
+// Description: Refactored to use specialized manager classes + Dear ImGui Debug UI
 ////////////////////////////////////////////////////////////////////////////////
 #include "graphicsclass.h"
 #include <DirectXMath.h>
 #include <algorithm>
 #include <Windows.h>
+
+// Dear ImGui 헤더 인클루드
+#include "imgui.h"
+#include "imgui_impl_win32.h"
+#include "imgui_impl_dx11.h"
 
 extern D3DClass* g_D3D;
 
@@ -44,6 +49,19 @@ bool GraphicsClass::Initialize(int screenWidth, int screenHeight, HWND hwnd)
 
     // ========== Player Controller ==========
     m_playerController.Initialize(m_Camera);
+
+    // ========== Shadow Mapping (실시간 그림자) ==========
+    m_ShadowMap = new ShadowMapClass;
+    if (!m_ShadowMap || !m_ShadowMap->Initialize(m_D3D->GetDevice(), 2048, 2048)) {
+        MessageBox(hwnd, L"Could not initialize Shadow Map.", L"Error", MB_OK);
+        return false;
+    }
+
+    m_DepthShader = new DepthShaderClass;
+    if (!m_DepthShader || !m_DepthShader->Initialize(m_D3D->GetDevice(), hwnd)) {
+        MessageBox(hwnd, L"Could not initialize Depth Shader.", L"Error", MB_OK);
+        return false;
+    }
 
     // ========== Shaders ==========
     m_MultiTexShader = new MultiTextureShaderClass;
@@ -114,22 +132,36 @@ bool GraphicsClass::Initialize(int screenWidth, int screenHeight, HWND hwnd)
     m_Light = new LightClass;
     if (!m_Light) return false;
 
-    m_Light->SetAmbientColor(0.2f, 0.2f, 0.2f, 1.0f);
+    m_Light->SetAmbientColor(0.25f, 0.25f, 0.25f, 1.0f);
     m_Light->SetDiffuseColor(1.0f, 1.0f, 1.0f, 1.0f);
-    m_Light->SetDirection(1.0f, 0.0f, 1.0f);
+    m_Light->SetDirection(0.5f, -1.0f, 0.5f); // 위에서 아래로 비추는 자연스러운 태양광 방향
     m_Light->SetSpecularColor(1.0f, 1.0f, 1.0f, 1.0f);
-    m_Light->SetSpecularPower(8.0f);
+    m_Light->SetSpecularPower(16.0f);
 
     // ========== Light Manager ==========
     m_lightManager.Initialize(m_Light);
 
-    m_scene = SCENE_TITLE;
+    // ========== Dear ImGui 초기화 ==========
+    if (!InitImGui(hwnd))
+    {
+        MessageBox(hwnd, L"Could not initialize Dear ImGui.", L"Error", MB_OK);
+        return false;
+    }
+
+    // 인트로 화면을 건너뛰고 즉시 3D 메인 게임 씬으로 시작
+    m_scene = SCENE_MAIN;
 
     return true;
 }
 
 void GraphicsClass::Shutdown()
 {
+    // ImGui 해제
+    ShutdownImGui();
+
+    if (m_DepthShader) { m_DepthShader->Shutdown(); delete m_DepthShader; m_DepthShader = nullptr; }
+    if (m_ShadowMap) { m_ShadowMap->Shutdown(); delete m_ShadowMap; m_ShadowMap = nullptr; }
+
     m_sceneManager.Shutdown();
 
     m_sky.Release();
@@ -279,10 +311,90 @@ void GraphicsClass::SetInvertY(bool invert)
 }
 
 //////////////////////////////////////////////////////////////////
-// Render - Main scene rendering
+// RenderShadowPass - 1st Pass: 광원 시점 깊이(Shadow Map) 렌더링
+//////////////////////////////////////////////////////////////////
+bool GraphicsClass::RenderShadowPass()
+{
+    if (!m_ShadowMap || !m_DepthShader) return false;
+
+    // 1. 플레이어 카메라 위치를 추적하는 Directional Light 뷰/직교 투영 행렬 생성 (어디를 이동해도 그림자 유지)
+    XMFLOAT3 camPos = m_Camera ? m_Camera->GetPosition() : XMFLOAT3(0, 0, 0);
+    m_lightManager.GenerateLightViewMatrix(XMFLOAT3(camPos.x, 0.0f, camPos.z), 100.0f);
+    m_lightManager.GenerateLightProjectionMatrix(140.0f, 140.0f, 1.0f, 220.0f);
+
+    XMMATRIX lightViewMatrix, lightProjectionMatrix;
+    m_lightManager.GetLightViewMatrix(lightViewMatrix);
+    m_lightManager.GetLightProjectionMatrix(lightProjectionMatrix);
+
+    // 2. 섀도우 맵 Depth 버퍼 바인딩 및 뷰포트 설정
+    m_ShadowMap->BindDsvAndSetNullRenderTarget(m_D3D->GetDeviceContext());
+
+    size_t hayIndex = m_sceneManager.GetHayIndex();
+    size_t pigIndex = m_sceneManager.GetPigIndex();
+    size_t fenceIndex = m_sceneManager.GetFenceIndex();
+    size_t treeIndex = m_sceneManager.GetTreeIndex();
+
+    // 3. 정적 FBX 모델들의 Depth 렌더링 (헛간, 돼지 등)
+    for (size_t i = 0; i < m_sceneManager.GetFbxCount(); ++i)
+    {
+        if (i == fenceIndex || i == treeIndex || i == hayIndex) continue;
+        if (i == 0 && !m_sceneManager.IsFarmerVisible()) continue;
+        if (i == pigIndex && !m_sceneManager.IsPigVisible()) continue;
+
+        FbxModelClass* f = m_sceneManager.GetFbxModel(i);
+        if (!f) continue;
+
+        XMFLOAT3 p = m_sceneManager.GetFbxPosition(i);
+        XMMATRIX fbxWorld = XMMatrixScaling(1.0f, 1.0f, 1.0f) * XMMatrixTranslation(p.x, p.y, p.z);
+
+        f->Render(m_D3D->GetDeviceContext());
+        m_DepthShader->Render(m_D3D->GetDeviceContext(), f->GetIndexCount(), fbxWorld, lightViewMatrix, lightProjectionMatrix);
+    }
+
+    // 4. 짚더미(Hay) 및 발사체(Projectiles) Depth 렌더링
+    if (hayIndex < m_sceneManager.GetFbxCount())
+    {
+        FbxModelClass* hayModel = m_sceneManager.GetFbxModel(hayIndex);
+        if (hayModel)
+        {
+            if (m_sceneManager.IsHayVisible())
+            {
+                XMFLOAT3 p = m_sceneManager.GetFbxPosition(hayIndex);
+                XMMATRIX world = XMMatrixScaling(1.0f, 1.0f, 1.0f) * XMMatrixTranslation(p.x, p.y, p.z);
+                hayModel->Render(m_D3D->GetDeviceContext());
+                m_DepthShader->Render(m_D3D->GetDeviceContext(), hayModel->GetIndexCount(), world, lightViewMatrix, lightProjectionMatrix);
+            }
+
+            const auto& projs = m_projectileSystem.GetProjectiles();
+            for (const auto& pr : projs)
+            {
+                XMMATRIX world = XMMatrixScaling(0.5f, 0.5f, 0.5f) * XMMatrixTranslation(pr.pos.x, pr.pos.y, pr.pos.z);
+                hayModel->Render(m_D3D->GetDeviceContext());
+                m_DepthShader->Render(m_D3D->GetDeviceContext(), hayModel->GetIndexCount(), world, lightViewMatrix, lightProjectionMatrix);
+            }
+        }
+    }
+
+    // 섀도우 패스 완료 후 OM 깊이 버퍼 언바인드 (메인 패스 SRV 바인딩 충돌 방지)
+    ID3D11RenderTargetView* nullRTV = nullptr;
+    m_D3D->GetDeviceContext()->OMSetRenderTargets(1, &nullRTV, nullptr);
+
+    return true;
+}
+
+//////////////////////////////////////////////////////////////////
+// Render - Main scene rendering (2-Pass 파이프라인)
 //////////////////////////////////////////////////////////////////
 bool GraphicsClass::Render()
 {
+    // ============================================================
+    // [Pass 1] 섀도우 패스: 광원 시점 Depth 맵 기록
+    // ============================================================
+    RenderShadowPass();
+
+    // ============================================================
+    // [Pass 2] 메인 렌더 패스: 카메라 시점 + 그림자 맵 합성 렌더링
+    // ============================================================
     XMMATRIX worldMatrix, viewMatrix, projectionMatrix, orthoMatrix;
 
     m_D3D->BeginScene(0.0f, 0.0f, 0.0f, 1.0f);
@@ -293,7 +405,18 @@ bool GraphicsClass::Render()
     m_D3D->GetProjectionMatrix(projectionMatrix);
     m_D3D->GetOrthoMatrix(orthoMatrix);
 
+    // 광원 뷰/투영 행렬 및 섀도우 파라미터 획득
+    XMMATRIX lightViewMatrix, lightProjectionMatrix;
+    m_lightManager.GetLightViewMatrix(lightViewMatrix);
+    m_lightManager.GetLightProjectionMatrix(lightProjectionMatrix);
+
+    ID3D11ShaderResourceView* shadowMapSRV = m_ShadowMap ? m_ShadowMap->GetShaderResourceView() : nullptr;
+    float shadowBias = m_lightManager.GetShadowBias();
+    bool enableShadow = m_lightManager.IsShadowEnabled();
+    bool enablePCF = m_lightManager.IsPcfEnabled();
+
     // ========== Skybox ==========
+    if (m_showSkybox)
     {
         XMFLOAT3 camPos = m_Camera->GetPosition();
         m_sky.Update(camPos, viewMatrix, projectionMatrix);
@@ -304,7 +427,10 @@ bool GraphicsClass::Render()
 
     m_D3D->TurnZBufferOn();
 
-    // ========== Plane (Ground) ==========
+    // 3D 지형 및 모델 렌더링에 와이어프레임 옵션 적용
+    m_D3D->SetWireframe(m_wireframeMode);
+
+    // ========== Plane (Ground) - 실시간 그림자 적용 ==========
     FbxModelClass* planeFbx = m_sceneManager.GetPlane();
     if (planeFbx && m_MultiTexShader)
     {
@@ -347,7 +473,16 @@ bool GraphicsClass::Render()
             0.8f,
             ambientColor,
             p0Pos, p0Color, p0Range,
-            p1Pos, p1Color, p1Range
+            p1Pos, p1Color, p1Range,
+            m_lightManager.GetAmbient(),
+            m_lightManager.GetDiffuse(),
+            m_lightManager.GetDirection(),
+            shadowMapSRV,
+            lightViewMatrix,
+            lightProjectionMatrix,
+            shadowBias,
+            enableShadow,
+            enablePCF
         );
     }
 
@@ -402,7 +537,13 @@ bool GraphicsClass::Render()
                 m_lightManager.GetIntensityScale(),
                 m_lightManager.IsAmbientEnabled(),
                 m_lightManager.IsDiffuseEnabled(),
-                m_lightManager.IsSpecularEnabled()
+                m_lightManager.IsSpecularEnabled(),
+                shadowMapSRV,
+                lightViewMatrix,
+                lightProjectionMatrix,
+                shadowBias,
+                enableShadow,
+                enablePCF
             );
         }
     }
@@ -478,7 +619,13 @@ bool GraphicsClass::Render()
                     m_lightManager.GetIntensityScale(),
                     m_lightManager.IsAmbientEnabled(),
                     m_lightManager.IsDiffuseEnabled(),
-                    m_lightManager.IsSpecularEnabled()
+                    m_lightManager.IsSpecularEnabled(),
+                    shadowMapSRV,
+                    lightViewMatrix,
+                    lightProjectionMatrix,
+                    shadowBias,
+                    enableShadow,
+                    enablePCF
                 );
             }
 
@@ -510,7 +657,13 @@ bool GraphicsClass::Render()
                     m_lightManager.GetIntensityScale(),
                     m_lightManager.IsAmbientEnabled(),
                     m_lightManager.IsDiffuseEnabled(),
-                    m_lightManager.IsSpecularEnabled()
+                    m_lightManager.IsSpecularEnabled(),
+                    shadowMapSRV,
+                    lightViewMatrix,
+                    lightProjectionMatrix,
+                    shadowBias,
+                    enableShadow,
+                    enablePCF
                 );
             }
         }
@@ -564,6 +717,11 @@ bool GraphicsClass::Render()
     m_D3D->TurnOffAlphaBlending();
     m_D3D->TurnZBufferOn();
 
+    // ========== Dear ImGui 디버그 UI 렌더링 ==========
+    // ImGui는 2D 인터페이스이므로 와이어프레임을 끄고 솔리드 모드로 렌더링합니다.
+    m_D3D->SetWireframe(false);
+    RenderImGui();
+
     m_D3D->EndScene();
     return true;
 }
@@ -603,3 +761,216 @@ bool GraphicsClass::RenderTitle()
     m_D3D->EndScene();
     return true;
 }
+
+//////////////////////////////////////////////////////////////////
+// Dear ImGui 초기화 (InitImGui)
+// DirectX 11 디바이스 및 Win32 창 핸들과 연동합니다.
+//////////////////////////////////////////////////////////////////
+bool GraphicsClass::InitImGui(HWND hwnd)
+{
+    // 1. ImGui 컨텍스트 생성 및 버전 검증
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    (void)io;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // 키보드 탐색 활성화
+
+    // 2. 한글 폰트 로드 (맑은 고딕 또는 굴림) - 한글 깨짐 완전 방지
+    if (GetFileAttributesW(L"C:\\Windows\\Fonts\\malgun.ttf") != INVALID_FILE_ATTRIBUTES)
+    {
+        io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\malgun.ttf", 16.0f, NULL, io.Fonts->GetGlyphRangesKorean());
+    }
+    else if (GetFileAttributesW(L"C:\\Windows\\Fonts\\gulim.ttc") != INVALID_FILE_ATTRIBUTES)
+    {
+        io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\gulim.ttc", 16.0f, NULL, io.Fonts->GetGlyphRangesKorean());
+    }
+    else
+    {
+        io.Fonts->AddFontDefault();
+    }
+
+    // 3. 모던 다크 테마 적용
+    ImGui::StyleColorsDark();
+
+    // UI 스타일 커스텀 (모서리 둥글게, 여백 조절)
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.WindowRounding = 6.0f;
+    style.FrameRounding = 4.0f;
+    style.PopupRounding = 4.0f;
+    style.ScrollbarRounding = 4.0f;
+    style.GrabRounding = 4.0f;
+    style.WindowBorderSize = 1.0f;
+
+    // 4. Win32 및 DirectX 11 플랫폼 백엔드 초기화
+    if (!ImGui_ImplWin32_Init(hwnd))
+    {
+        return false;
+    }
+
+    if (!ImGui_ImplDX11_Init(m_D3D->GetDevice(), m_D3D->GetDeviceContext()))
+    {
+        return false;
+    }
+
+    return true;
+}
+
+//////////////////////////////////////////////////////////////////
+// Dear ImGui 리소스 해제 (ShutdownImGui)
+//////////////////////////////////////////////////////////////////
+void GraphicsClass::ShutdownImGui()
+{
+    if (ImGui::GetCurrentContext())
+    {
+        ImGui_ImplDX11_Shutdown();
+        ImGui_ImplWin32_Shutdown();
+        ImGui::DestroyContext();
+    }
+}
+
+//////////////////////////////////////////////////////////////////
+// Dear ImGui 디버그 컨트롤 패널 렌더링 (RenderImGui)
+// 광원 실시간 조절, 카메라 정보, 성능 통계, 렌더링 모드 토글
+//////////////////////////////////////////////////////////////////
+void GraphicsClass::RenderImGui()
+{
+    if (!m_showImGui) return;
+
+    // ImGui 새 프레임 시작
+    ImGui_ImplDX11_NewFrame();
+    ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
+
+    // 마우스 커서 해제(UI 조작 모드) 시 ImGui가 화면에 직접 마우스 커서를 그리도록 설정
+    ImGuiIO& io = ImGui::GetIO();
+    io.MouseDrawCursor = (m_showImGui && !m_isCursorLocked);
+
+    // 윈도우 초기 위치 및 크기 설정
+    ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(400, 560), ImGuiCond_FirstUseEver);
+
+    if (ImGui::Begin(u8"Pawdy Engine Debug Panel [Tab/F1: 커서 해제/잠금]", &m_showImGui))
+    {
+        // ------------------------------------------------------------
+        // 1. 실시간 성능 모니터링 (Performance & Stats)
+        // ------------------------------------------------------------
+        if (ImGui::CollapsingHeader(u8"성능 및 해상도 (Performance)", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            float frameTimeMs = (m_fps > 0) ? (1000.0f / m_fps) : 0.0f;
+            ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f), "FPS: %d (%.2f ms/frame)", m_fps, frameTimeMs);
+            ImGui::Text(u8"CPU 점유율: %d %%", m_cpu);
+            ImGui::Text(u8"현재 해상도: %d x %d", m_screenWidth, m_screenHeight);
+            ImGui::Separator();
+        }
+
+        // ------------------------------------------------------------
+        // 2. 실시간 그림자 설정 (Shadow Mapping)
+        // ------------------------------------------------------------
+        if (ImGui::CollapsingHeader(u8"실시간 그림자 제어 (Shadow Mapping)", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            ImGui::Checkbox(u8"실시간 그림자 ON (Shadow Map)", m_lightManager.GetShadowEnabledPtr());
+            ImGui::SameLine();
+            ImGui::Checkbox(u8"3x3 PCF 소프트 섀도우 ON", m_lightManager.GetPcfEnabledPtr());
+
+            ImGui::SliderFloat(u8"그림자 바이어스 (Bias)", m_lightManager.GetShadowBiasPtr(), 0.0001f, 0.0080f, "%.4f");
+            ImGui::Text(u8"섀도우 맵 해상도: 2048 x 2048 (D32_FLOAT)");
+            ImGui::Separator();
+        }
+
+        // ------------------------------------------------------------
+        // 3. 방향성 조명 및 퐁 셰이딩 제어 (Directional Light Controls)
+        // ------------------------------------------------------------
+        if (ImGui::CollapsingHeader(u8"조명 및 셰이더 조절 (Lighting)", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            // (1) 빛의 방향 벡터 실시간 회전
+            DirectX::XMFLOAT3* dir = m_lightManager.GetDirectionPtr();
+            float dirArray[3] = { dir->x, dir->y, dir->z };
+            if (ImGui::SliderFloat3(u8"빛 방향 (Direction)", dirArray, -1.0f, 1.0f))
+            {
+                XMVECTOR v = XMVector3Normalize(XMLoadFloat3((XMFLOAT3*)dirArray));
+                XMStoreFloat3(dir, v);
+            }
+
+            // (2) 주변광 (Ambient Color)
+            DirectX::XMFLOAT4* amb = m_lightManager.GetAmbientPtr();
+            ImGui::ColorEdit4(u8"주변광 (Ambient)", (float*)amb);
+
+            // (3) 확산광 (Diffuse Color)
+            DirectX::XMFLOAT4* diff = m_lightManager.GetDiffusePtr();
+            ImGui::ColorEdit4(u8"확산광 (Diffuse)", (float*)diff);
+
+            // (4) 반사광 (Specular Color)
+            DirectX::XMFLOAT4* spec = m_lightManager.GetSpecularColorPtr();
+            ImGui::ColorEdit4(u8"반사광 (Specular)", (float*)spec);
+
+            // (5) 반사광 지수 (Specular Power / Shininess)
+            float* specPow = m_lightManager.GetSpecularPowerPtr();
+            ImGui::SliderFloat(u8"광택 강도 (Shininess)", specPow, 1.0f, 128.0f, "%.1f");
+
+            // (6) 각 조명 컴포넌트 ON/OFF 토글
+            ImGui::Checkbox(u8"주변광 ON", m_lightManager.GetAmbientEnabledPtr());
+            ImGui::SameLine();
+            ImGui::Checkbox(u8"확산광 ON", m_lightManager.GetDiffuseEnabledPtr());
+            ImGui::Checkbox(u8"반사광 ON", m_lightManager.GetSpecularEnabledPtr());
+            ImGui::SameLine();
+            ImGui::Checkbox(u8"포인트 라이트 ON", m_lightManager.GetPointLightEnabledPtr());
+
+            ImGui::Separator();
+        }
+
+        // ------------------------------------------------------------
+        // 3. 카메라 및 플레이어 실시간 좌표 (Camera / Player Info)
+        // ------------------------------------------------------------
+        if (ImGui::CollapsingHeader(u8"카메라 및 플레이어 정보 (Camera)", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            if (m_Camera)
+            {
+                XMFLOAT3 pos = m_Camera->GetPosition();
+                XMFLOAT3 rot = m_Camera->GetRotation();
+                ImGui::Text(u8"카메라 위치: (%.2f, %.2f, %.2f)", pos.x, pos.y, pos.z);
+                ImGui::Text(u8"카메라 회전: (Pitch: %.1f, Yaw: %.1f)", rot.x, rot.y);
+            }
+            ImGui::Separator();
+        }
+
+        // ------------------------------------------------------------
+        // 4. 렌더링 모드 옵션 (Render Settings)
+        // ------------------------------------------------------------
+        if (ImGui::CollapsingHeader(u8"렌더링 모드 옵션 (Render Settings)", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            // 와이어프레임 렌더링 모드 토글
+            ImGui::Checkbox(u8"와이어프레임 뷰 (Wireframe)", &m_wireframeMode);
+            ImGui::Checkbox(u8"스카이박스 표시 (Skybox)", &m_showSkybox);
+            ImGui::Separator();
+        }
+
+        // ------------------------------------------------------------
+        // 5. 단축키 안내
+        // ------------------------------------------------------------
+        ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), u8"[Tab] 또는 [F1] 키: 마우스 커서 해제 / 1인칭 조작 모드 전환");
+    }
+    ImGui::End();
+
+    // ImGui 정점/인덱스 드로우 데이터 빌드 및 Direct3D 11 파이프라인에 렌더링
+    ImGui::Render();
+    ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+}
+
+//////////////////////////////////////////////////////////////////
+// OnResize - 창 크기 변경 시 해상도 및 렌더 타깃/투영행렬 갱신
+//////////////////////////////////////////////////////////////////
+void GraphicsClass::OnResize(int width, int height)
+{
+    if (width <= 0 || height <= 0) return;
+    if (m_screenWidth == width && m_screenHeight == height) return;
+
+    m_screenWidth = width;
+    m_screenHeight = height;
+
+    if (m_D3D)
+    {
+        m_D3D->Resize(width, height, SCREEN_NEAR, SCREEN_DEPTH);
+    }
+}
+
+
