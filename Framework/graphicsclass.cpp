@@ -280,26 +280,6 @@ bool GraphicsClass::Frame(int mouseDX, int mouseDY)
     m_lightManager.HandleHotkeys();
     m_lightManager.TogglePointLight();
 
-    // Update UI text
-    if (m_Text)
-    {
-        int polyCount = 0;
-        int objCount = (int)m_sceneManager.GetFbxCount();
-
-        for (size_t i = 0; i < m_sceneManager.GetFbxCount(); ++i)
-        {
-            FbxModelClass* f = m_sceneManager.GetFbxModel(i);
-            if (f) polyCount += f->GetIndexCount() / 3;
-        }
-
-        m_Text->SetSceneInfo(
-            m_fps, m_cpu,
-            polyCount, objCount,
-            m_screenWidth, m_screenHeight,
-            m_D3D->GetDeviceContext()
-        );
-    }
-
     return Render();
 }
 
@@ -764,20 +744,7 @@ bool GraphicsClass::Render()
     // ========== 3D Particle System (동물 먹이 반응 파티클 이펙트) ==========
     m_particleSystem.Render(m_D3D->GetDeviceContext(), viewMatrix, projectionMatrix, m_Camera->GetPosition());
 
-    // ========== 2D UI ==========
-    m_D3D->TurnZBufferOff();
-    m_D3D->TurnOnAlphaBlending();
-
-    if (m_Text)
-    {
-        m_Text->SetTitleVisible(false);
-        m_Text->Render(m_D3D->GetDeviceContext(), worldMatrix, orthoMatrix);
-    }
-
-    m_D3D->TurnOffAlphaBlending();
-    m_D3D->TurnZBufferOn();
-
-    // ========== Dear ImGui 디버그 UI 렌더링 ==========
+    // ========== Dear ImGui 디버그 UI 및 인게임 퀘스트 HUD 렌더링 ==========
     // ImGui는 2D 인터페이스이므로 와이어프레임을 끄고 솔리드 모드로 렌더링합니다.
     m_D3D->SetWireframe(false);
     RenderImGui();
