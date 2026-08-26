@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <d3d11.h>
 #include <DirectXMath.h>
 #include <string>
@@ -37,6 +37,7 @@ public:
         const DirectX::XMMATRIX& lightView = DirectX::XMMatrixIdentity(),
         const DirectX::XMMATRIX& lightProj = DirectX::XMMatrixIdentity(),
         float shadowBias = 0.0015f,
+        float shadowIntensity = 0.85f,
         bool enableShadow = true,
         bool enablePCF = true
     );
@@ -68,6 +69,7 @@ private:
         const DirectX::XMMATRIX& lightView,
         const DirectX::XMMATRIX& lightProj,
         float shadowBias,
+        float shadowIntensity,
         bool enableShadow,
         bool enablePCF);
 
@@ -110,7 +112,7 @@ private:
         float shadowBias;
         int enableShadow;
         int enablePCF;
-        float _shadowPad;
+        float shadowIntensity;
     };
 
     struct DirLightBufferType

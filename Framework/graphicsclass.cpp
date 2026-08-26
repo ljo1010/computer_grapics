@@ -412,6 +412,7 @@ bool GraphicsClass::Render()
 
     ID3D11ShaderResourceView* shadowMapSRV = m_ShadowMap ? m_ShadowMap->GetShaderResourceView() : nullptr;
     float shadowBias = m_lightManager.GetShadowBias();
+    float shadowIntensity = m_lightManager.GetShadowIntensity();
     bool enableShadow = m_lightManager.IsShadowEnabled();
     bool enablePCF = m_lightManager.IsPcfEnabled();
 
@@ -442,7 +443,8 @@ bool GraphicsClass::Render()
 
         planeFbx->Render(m_D3D->GetDeviceContext());
 
-        XMFLOAT4 ambientColor = XMFLOAT4(0.35f, 0.35f, 0.35f, 1.0f);
+        // 바닥 주변광을 0.12f로 낮춰 직사광/그림자 명암비(Contrast)를 대폭 강화
+        XMFLOAT4 ambientColor = XMFLOAT4(0.12f, 0.12f, 0.12f, 1.0f);
         XMFLOAT3 p0Pos, p1Pos;
         XMFLOAT4 p0Color, p1Color;
         float p0Range, p1Range;
@@ -481,6 +483,7 @@ bool GraphicsClass::Render()
             lightViewMatrix,
             lightProjectionMatrix,
             shadowBias,
+            shadowIntensity,
             enableShadow,
             enablePCF
         );
@@ -542,6 +545,7 @@ bool GraphicsClass::Render()
                 lightViewMatrix,
                 lightProjectionMatrix,
                 shadowBias,
+                shadowIntensity,
                 enableShadow,
                 enablePCF
             );
@@ -624,6 +628,7 @@ bool GraphicsClass::Render()
                     lightViewMatrix,
                     lightProjectionMatrix,
                     shadowBias,
+                    shadowIntensity,
                     enableShadow,
                     enablePCF
                 );
@@ -662,6 +667,7 @@ bool GraphicsClass::Render()
                     lightViewMatrix,
                     lightProjectionMatrix,
                     shadowBias,
+                    shadowIntensity,
                     enableShadow,
                     enablePCF
                 );
@@ -872,6 +878,7 @@ void GraphicsClass::RenderImGui()
             ImGui::SameLine();
             ImGui::Checkbox(u8"3x3 PCF 소프트 섀도우 ON", m_lightManager.GetPcfEnabledPtr());
 
+            ImGui::SliderFloat(u8"그림자 농도 (Darkness)", m_lightManager.GetShadowIntensityPtr(), 0.0f, 1.0f, "%.2f");
             ImGui::SliderFloat(u8"그림자 바이어스 (Bias)", m_lightManager.GetShadowBiasPtr(), 0.0001f, 0.0080f, "%.4f");
             ImGui::Text(u8"섀도우 맵 해상도: 2048 x 2048 (D32_FLOAT)");
             ImGui::Separator();

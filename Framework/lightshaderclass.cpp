@@ -90,6 +90,7 @@ bool LightShaderClass::RenderEx(ID3D11DeviceContext* deviceContext, int indexCou
     XMMATRIX lightViewMatrix,
     XMMATRIX lightProjMatrix,
     float shadowBias,
+    float shadowIntensity,
     bool enableShadow,
     bool enablePCF)
 {
@@ -99,7 +100,7 @@ bool LightShaderClass::RenderEx(ID3D11DeviceContext* deviceContext, int indexCou
         pointPositions, pointDiffuse, pointCount,
         kc, kl, kq, pointIntensityScale,
         enableAmbient, enableDiffuse, enableSpecular,
-        shadowMapSRV, lightViewMatrix, lightProjMatrix, shadowBias, enableShadow, enablePCF))
+        shadowMapSRV, lightViewMatrix, lightProjMatrix, shadowBias, shadowIntensity, enableShadow, enablePCF))
         return false;
 
     RenderShader(deviceContext, indexCount);
@@ -396,6 +397,7 @@ bool LightShaderClass::SetShaderParametersEx(ID3D11DeviceContext* deviceContext,
     XMMATRIX lightViewMatrix,
     XMMATRIX lightProjMatrix,
     float shadowBias,
+    float shadowIntensity,
     bool enableShadow,
     bool enablePCF)
 {
@@ -507,7 +509,7 @@ bool LightShaderClass::SetShaderParametersEx(ID3D11DeviceContext* deviceContext,
             s->shadowBias = shadowBias;
             s->enableShadow = enableShadow ? 1 : 0;
             s->enablePCF = enablePCF ? 1 : 0;
-            s->_shadowPad = 0.0f;
+            s->shadowIntensity = shadowIntensity;
             deviceContext->Unmap(m_shadowBuffer, 0);
 
             deviceContext->VSSetConstantBuffers(7, 1, &m_shadowBuffer);

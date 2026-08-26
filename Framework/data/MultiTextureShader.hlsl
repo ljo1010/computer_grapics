@@ -32,7 +32,7 @@ cbuffer ShadowBuffer : register(b3)
     float shadowBias;
     int enableShadow;
     int enablePCF;
-    float _shadowPad;
+    float shadowIntensity; // 그림자 농도 조절
 };
 
 cbuffer DirLightBuffer : register(b4)
@@ -122,7 +122,7 @@ float CalculateShadow(float3 worldPosition)
     }
 
     float currentDepth = projCoords.z - shadowBias;
-    float shadowFactor = 0.0f;
+    float rawShadow = 0.0f;
 
     if (enablePCF != 0)
     {
@@ -134,18 +134,19 @@ float CalculateShadow(float3 worldPosition)
             for (int y = -1; y <= 1; ++y)
             {
                 float pcfDepth = ShadowMap.Sample(SampleType, projCoords.xy + float2(x, y) * texelSize).r;
-                shadowFactor += (currentDepth <= pcfDepth) ? 1.0f : 0.0f;
+                rawShadow += (currentDepth <= pcfDepth) ? 1.0f : 0.0f;
             }
         }
-        shadowFactor /= 9.0f;
+        rawShadow /= 9.0f;
     }
     else
     {
         float closestDepth = ShadowMap.Sample(SampleType, projCoords.xy).r;
-        shadowFactor = (currentDepth <= closestDepth) ? 1.0f : 0.0f;
+        rawShadow = (currentDepth <= closestDepth) ? 1.0f : 0.0f;
     }
 
-    return shadowFactor;
+    // shadowIntensity에 따라 그림자 농도 조절 (lerp)
+    return lerp(1.0f - saturate(shadowIntensity), 1.0f, rawShadow);
 }
 
 float4 PS_main(VS_OUTPUT i) : SV_TARGET

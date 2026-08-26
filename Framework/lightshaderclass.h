@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////////////
-// Filename: lightshaderclass.h (UNIFIED: directional + point lights)
+// Filename: lightshaderclass.h (UNIFIED: directional + point lights + shadow)
 ////////////////////////////////////////////////////////////////////////////////
 #ifndef _LIGHTSHADERCLASS_H_
 #define _LIGHTSHADERCLASS_H_
@@ -15,7 +15,6 @@
 using namespace std;
 using namespace DirectX;
 
-// HLSL과 동일하게 유지
 #ifndef NUM_LIGHTS
 #define NUM_LIGHTS 3
 #endif
@@ -38,17 +37,17 @@ private:
     struct CameraBufferType
     {
         XMFLOAT3 cameraPosition;
-        float    padding; // 16-byte align
+        float    padding;
     };
 
     // HLSL: DirLightBuffer (Directional Phong)
     struct LightBufferType
     {
-        XMFLOAT4 ambientColor;   // a
-        XMFLOAT4 diffuseColor;   // d
-        XMFLOAT3 lightDirection; // dir (toward scene)
-        float    specularPower;  // shininess
-        XMFLOAT4 specularColor;  // s
+        XMFLOAT4 ambientColor;
+        XMFLOAT4 diffuseColor;
+        XMFLOAT3 lightDirection;
+        float    specularPower;
+        XMFLOAT4 specularColor;
     };
 
     // HLSL: PointLightPositionBuffer
@@ -60,25 +59,25 @@ private:
     // HLSL: PointLightColorBuffer
     struct PointLightColorBufferType
     {
-        XMFLOAT4 pointDiffuse[NUM_LIGHTS];  // rgba
+        XMFLOAT4 pointDiffuse[NUM_LIGHTS];
     };
 
     // HLSL: AttenuationBuffer
     struct AttenuationBufferType
     {
-        float kc;   // constant
-        float kl;   // linear
-        float kq;   // quadratic
-        float pointIntensityScale; // 키 8/9로 조절
+        float kc;
+        float kl;
+        float kq;
+        float pointIntensityScale;
     };
 
     // HLSL: ToggleBuffer
     struct ToggleBufferType
     {
-        int enableAmbient;   // 키 5
-        int enableDiffuse;   // 키 6
-        int enableSpecular;  // 키 7
-        int _pad;            // 16-byte align
+        int enableAmbient;
+        int enableDiffuse;
+        int enableSpecular;
+        int _pad;
     };
 
     // HLSL: ShadowBuffer (실시간 섀도우 매핑)
@@ -89,7 +88,7 @@ private:
         float shadowBias;
         int enableShadow;
         int enablePCF;
-        float _shadowPad;
+        float shadowIntensity;
     };
 
 public:
@@ -109,7 +108,6 @@ public:
         XMFLOAT4 specularColor,
         float specularPower);
 
-
     bool RenderEx(ID3D11DeviceContext*, int,
         XMMATRIX, XMMATRIX, XMMATRIX,
         ID3D11ShaderResourceView*,
@@ -121,8 +119,8 @@ public:
         XMFLOAT4 specularColor,
         float    specularPower,
         // points
-        const XMFLOAT4* pointPositions, // xyz pos, w ignored
-        const XMFLOAT4* pointDiffuse,   // rgba
+        const XMFLOAT4* pointPositions,
+        const XMFLOAT4* pointDiffuse,
         int             pointCount,
         // attenuation & scale
         float kc, float kl, float kq,
@@ -136,6 +134,7 @@ public:
         XMMATRIX lightViewMatrix = XMMatrixIdentity(),
         XMMATRIX lightProjMatrix = XMMatrixIdentity(),
         float shadowBias = 0.0015f,
+        float shadowIntensity = 0.85f,
         bool enableShadow = true,
         bool enablePCF = true);
 
@@ -144,7 +143,6 @@ private:
     void ShutdownShader();
     void OutputShaderErrorMessage(ID3D10Blob*, HWND, const WCHAR*);
 
-    // 기존 파라미터 셋업
     bool SetShaderParameters(ID3D11DeviceContext*,
         XMMATRIX, XMMATRIX, XMMATRIX,
         ID3D11ShaderResourceView*,
@@ -155,7 +153,6 @@ private:
         XMFLOAT4 specularColor,
         float    specularPower);
 
-    // 확장 파라미터 셋업
     bool SetShaderParametersEx(ID3D11DeviceContext*,
         XMMATRIX, XMMATRIX, XMMATRIX,
         ID3D11ShaderResourceView*,
@@ -182,29 +179,27 @@ private:
         XMMATRIX lightViewMatrix,
         XMMATRIX lightProjMatrix,
         float shadowBias,
+        float shadowIntensity,
         bool enableShadow,
         bool enablePCF);
 
     void RenderShader(ID3D11DeviceContext*, int);
 
 private:
-    // Shaders & layout & sampler
     ID3D11VertexShader* m_vertexShader = nullptr;
     ID3D11PixelShader* m_pixelShader = nullptr;
     ID3D11InputLayout* m_layout = nullptr;
     ID3D11SamplerState* m_sampleState = nullptr;
 
-    // Constant buffers
-    ID3D11Buffer* m_matrixBuffer = nullptr; // MatrixBufferType
-    ID3D11Buffer* m_cameraBuffer = nullptr; // CameraBufferType
-    ID3D11Buffer* m_lightBuffer = nullptr; // LightBufferType (directional)
+    ID3D11Buffer* m_matrixBuffer = nullptr;
+    ID3D11Buffer* m_cameraBuffer = nullptr;
+    ID3D11Buffer* m_lightBuffer = nullptr;
 
-    // 추가된 버퍼들 (통합 셰이더용)
-    ID3D11Buffer* m_pointPosBuffer = nullptr; // PointLightPositionBufferType
-    ID3D11Buffer* m_pointColorBuffer = nullptr; // PointLightColorBufferType
-    ID3D11Buffer* m_attenuationBuffer = nullptr; // AttenuationBufferType
-    ID3D11Buffer* m_toggleBuffer = nullptr; // ToggleBufferType
-    ID3D11Buffer* m_shadowBuffer = nullptr; // ShadowBufferType (실시간 섀도우)
+    ID3D11Buffer* m_pointPosBuffer = nullptr;
+    ID3D11Buffer* m_pointColorBuffer = nullptr;
+    ID3D11Buffer* m_attenuationBuffer = nullptr;
+    ID3D11Buffer* m_toggleBuffer = nullptr;
+    ID3D11Buffer* m_shadowBuffer = nullptr;
 };
 
 #endif // _LIGHTSHADERCLASS_H_

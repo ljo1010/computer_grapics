@@ -76,6 +76,10 @@ public:
     float GetShadowBias() const { return m_shadowBias; }
     void SetShadowBias(float bias) { m_shadowBias = bias; }
 
+    float* GetShadowIntensityPtr() { return &m_shadowIntensity; }
+    float GetShadowIntensity() const { return m_shadowIntensity; }
+    void SetShadowIntensity(float intensity) { m_shadowIntensity = intensity; }
+
     bool* GetShadowEnabledPtr() { return &m_shadowEnabled; }
     bool IsShadowEnabled() const { return m_shadowEnabled; }
     void SetShadowEnabled(bool enabled) { m_shadowEnabled = enabled; }
@@ -120,6 +124,7 @@ private:
     DirectX::XMMATRIX m_lightViewMatrix = DirectX::XMMatrixIdentity();
     DirectX::XMMATRIX m_lightProjMatrix = DirectX::XMMatrixIdentity();
     float m_shadowBias = 0.0015f;
+    float m_shadowIntensity = 0.85f; // 그림자 기본 짙기 (85% 어둡게 차단하여 선명한 그림자 표현)
     bool m_shadowEnabled = true;
     bool m_pcfEnabled = true;
 };

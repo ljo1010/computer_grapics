@@ -1,4 +1,4 @@
-﻿#include "MultiTextureShaderClass.h"
+#include "MultiTextureShaderClass.h"
 #include <d3dcompiler.h>
 
 using namespace DirectX;
@@ -46,6 +46,7 @@ bool MultiTextureShaderClass::Render(
     const XMMATRIX& lightView,
     const XMMATRIX& lightProj,
     float shadowBias,
+    float shadowIntensity,
     bool enableShadow,
     bool enablePCF)
 {
@@ -57,7 +58,7 @@ bool MultiTextureShaderClass::Render(
         pointPos1, pointColor1, pointRange1,
         dirAmbient, dirDiffuse, dirDirection,
         shadowMapSRV, lightView, lightProj,
-        shadowBias, enableShadow, enablePCF))
+        shadowBias, shadowIntensity, enableShadow, enablePCF))
         return false;
 
     RenderShader(dc, indexCount);
@@ -88,6 +89,7 @@ bool MultiTextureShaderClass::SetShaderParameters(
     const XMMATRIX& lightView,
     const XMMATRIX& lightProj,
     float shadowBias,
+    float shadowIntensity,
     bool enableShadow,
     bool enablePCF)
 {
@@ -156,7 +158,7 @@ bool MultiTextureShaderClass::SetShaderParameters(
             sb->shadowBias = shadowBias;
             sb->enableShadow = enableShadow ? 1 : 0;
             sb->enablePCF = enablePCF ? 1 : 0;
-            sb->_shadowPad = 0.0f;
+            sb->shadowIntensity = shadowIntensity;
             dc->Unmap(m_shadowBuffer, 0);
 
             dc->PSSetConstantBuffers(3, 1, &m_shadowBuffer);
