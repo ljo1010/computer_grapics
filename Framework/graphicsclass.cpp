@@ -241,13 +241,11 @@ bool GraphicsClass::Frame(int mouseDX, int mouseDY)
     }
     prevRKeyDown = currRKeyDown;
 
-    // 4. [F] 키 또는 [마우스 좌클릭]: 건초 던지기 발사
+    // 4. [F] 키: 건초 던지기 발사 (마우스 좌클릭 제거, 오직 F키로만 발사)
     static bool prevFKeyDown = false;
-    static bool prevLButtonDown = false;
     bool currFKeyDown = (GetAsyncKeyState('F') & 0x8000) != 0;
-    bool currLButtonDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
 
-    bool isShootTriggered = (currFKeyDown && !prevFKeyDown) || (currLButtonDown && !prevLButtonDown);
+    bool isShootTriggered = (currFKeyDown && !prevFKeyDown);
 
     if (isShootTriggered && m_questSystem.CanShoot())
     {
@@ -255,7 +253,6 @@ bool GraphicsClass::Frame(int mouseDX, int mouseDY)
         m_questSystem.ConsumeAmmo();
     }
     prevFKeyDown = currFKeyDown;
-    prevLButtonDown = currLButtonDown;
 
     // 5. 투사체 이동 및 퀘스트(동물 피격) 업데이트
     m_projectileSystem.UpdateMotionOnly(1.0f / 60.0f);
@@ -926,7 +923,7 @@ void GraphicsClass::RenderQuestHUD()
         }
 
         ImGui::Spacing();
-        ImGui::TextDisabled(u8"[F / 좌클릭: 던지기]  [E: 먹이기]  [R: 리셋]  [Tab/F1: 디버그 패널]");
+        ImGui::TextDisabled(u8"[F: 건초 던지기]  [E: 직접 먹이기]  [R: 퀘스트 리셋]  [Tab/F1: 디버그 패널]");
     }
     ImGui::End();
 
