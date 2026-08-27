@@ -114,6 +114,13 @@ bool GraphicsClass::Initialize(int screenWidth, int screenHeight, HWND hwnd)
     // ========== Sound Manager (BGM 및 효과음 이벤트 연동) ==========
     m_soundManager.Initialize(hwnd);
 
+    // ========== Water System (연못 수면 렌더링 시스템) ==========
+    if (!m_water.Initialize(m_D3D->GetDevice(), hwnd, 28.0f, 28.0f, 40))
+    {
+        MessageBox(hwnd, L"Could not initialize water system.", L"Error", MB_OK);
+        return false;
+    }
+
     // ========== UI ==========
     m_Bitmap = std::make_unique<BitmapClass>();
     if (!m_Bitmap) return false;
@@ -175,6 +182,7 @@ void GraphicsClass::Shutdown()
     ShutdownImGui();
 
     m_soundManager.Shutdown();
+    m_water.Shutdown();
     m_particleSystem.Shutdown();
 
     if (m_DepthShader) { m_DepthShader->Shutdown(); m_DepthShader.reset(); }
@@ -226,6 +234,9 @@ bool GraphicsClass::Frame(int mouseDX, int mouseDY)
     // Update player controller
     m_playerController.Update(mouseDX, mouseDY);
     XMFLOAT3 camPos = m_playerController.GetPosition();
+
+    // 시간 누적 (수면 파도 및 셰이더 애니메이션용)
+    m_gameTime += 1.0f / 60.0f;
 
     // 1. 건초 줍기 처리 (맵의 건초 더미에 다가가면 획득)
     m_questSystem.TryPickupHay(camPos);
@@ -700,7 +711,29 @@ void GraphicsClass::ExecuteSkinnedPass(const RenderContext& ctx)
 }
 
 //////////////////////////////////////////////////////////////////
-// [Pass 7] Particle Pass (절차적 별빛 빌보드 파티클)
+// [Pass 7] Water Surface Pass (에메랄드빛 일렁이는 연못 수면)
+//////////////////////////////////////////////////////////////////
+void GraphicsClass::ExecuteWaterPass(const RenderContext& ctx)
+{
+    if (!m_water.IsEnabled()) return;
+
+    m_D3D->TurnOnAlphaBlending();
+
+    m_water.Render(
+        ctx.deviceContext,
+        ctx.viewMatrix, ctx.projectionMatrix,
+        ctx.cameraPosition, m_gameTime,
+        m_lightManager.GetDiffuse(), m_lightManager.GetDirection(),
+        m_lightManager.GetSpecularColor(), m_lightManager.GetSpecularPower(),
+        m_lightManager.GetFogColor(), m_lightManager.GetFogStart(), m_lightManager.GetFogEnd(),
+        m_lightManager.IsFogEnabled()
+    );
+
+    m_D3D->TurnOffAlphaBlending();
+}
+
+//////////////////////////////////////////////////////////////////
+// [Pass 8] Particle Pass (절차적 별빛 빌보드 파티클)
 //////////////////////////////////////////////////////////////////
 void GraphicsClass::ExecuteParticlePass(const RenderContext& ctx)
 {
@@ -708,7 +741,7 @@ void GraphicsClass::ExecuteParticlePass(const RenderContext& ctx)
 }
 
 //////////////////////////////////////////////////////////////////
-// [Pass 8] UI & ImGui Pass (2D HUD 및 디버그 패널)
+// [Pass 9] UI & ImGui Pass (2D HUD 및 디버그 패널)
 //////////////////////////////////////////////////////////////////
 void GraphicsClass::ExecuteUIPass(const RenderContext& ctx)
 {
@@ -743,10 +776,13 @@ bool GraphicsClass::Render()
     // 7. [Pass 6: Skinned Animation Pass] 농장 소녀 스켈레탈 본 변형 애니메이션
     ExecuteSkinnedPass(ctx);
 
-    // 8. [Pass 7: Particle Billboard Pass] 동물 먹이 반응 절차적 별빛 파티클 렌더링
+    // 8. [Pass 7: Water Surface Pass] 에메랄드빛 일렁이는 연못 수면 렌더링
+    ExecuteWaterPass(ctx);
+
+    // 9. [Pass 8: Particle Billboard Pass] 동물 먹이 반응 절차적 별빛 파티클 렌더링
     ExecuteParticlePass(ctx);
 
-    // 9. [Pass 8: UI & ImGui Debug Pass] 인게임 퀘스트 HUD 및 실시간 디버그 패널
+    // 10. [Pass 9: UI & ImGui Debug Pass] 인게임 퀘스트 HUD 및 실시간 디버그 패널
     ExecuteUIPass(ctx);
 
     m_D3D->EndScene();
@@ -1160,7 +1196,50 @@ void GraphicsClass::RenderImGui()
             }
 
             // ------------------------------------------------------------
-            // 8. 단축키 안내
+            // 8. 수면 및 연못 시스템 (Water Surface & Pond System)
+            // ------------------------------------------------------------
+            if (ImGui::CollapsingHeader(u8"수면 및 연못 렌더링 (Water System)", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                bool waterEnabled = m_water.IsEnabled();
+                if (ImGui::Checkbox(u8"연못 수면 활성화 (Enable Water)", &waterEnabled))
+                {
+                    m_water.SetEnabled(waterEnabled);
+                }
+
+                if (waterEnabled)
+                {
+                    XMFLOAT3& waterPos = m_water.GetPosition();
+                    float posArray[3] = { waterPos.x, waterPos.y, waterPos.z };
+                    if (ImGui::DragFloat3(u8"연못 위치 (Pos X/Y/Z)", posArray, 0.1f, -50.0f, 50.0f, "%.2f"))
+                    {
+                        waterPos = XMFLOAT3(posArray[0], posArray[1], posArray[2]);
+                    }
+
+                    ImGui::SliderFloat(u8"연못 크기 (Scale)", &m_water.GetScale(), 0.2f, 3.0f, "%.2f");
+                    ImGui::SliderFloat(u8"파도 속도 (Wave Speed)", &m_water.GetWaveSpeed(), 0.0f, 3.0f, "%.2f");
+                    ImGui::SliderFloat(u8"파도 높이 (Wave Height)", &m_water.GetWaveHeight(), 0.0f, 0.3f, "%.3f");
+                    ImGui::SliderFloat(u8"파도 주파수 (Wave Freq)", &m_water.GetWaveFrequency(), 0.1f, 5.0f, "%.2f");
+                    ImGui::SliderFloat(u8"수면 투명도 (Alpha)", &m_water.GetWaterAlpha(), 0.1f, 1.0f, "%.2f");
+
+                    XMFLOAT4& deep = m_water.GetDeepColor();
+                    float deepCol[3] = { deep.x, deep.y, deep.z };
+                    if (ImGui::ColorEdit3(u8"깊은 물빛 (Deep Color)", deepCol))
+                    {
+                        deep = XMFLOAT4(deepCol[0], deepCol[1], deepCol[2], 1.0f);
+                    }
+
+                    XMFLOAT4& shallow = m_water.GetShallowColor();
+                    float shallowCol[3] = { shallow.x, shallow.y, shallow.z };
+                    if (ImGui::ColorEdit3(u8"반사 물빛 (Shallow Color)", shallowCol))
+                    {
+                        shallow = XMFLOAT4(shallowCol[0], shallowCol[1], shallowCol[2], 1.0f);
+                    }
+                }
+                ImGui::Separator();
+            }
+
+            // ------------------------------------------------------------
+            // 9. 단축키 안내
             // ------------------------------------------------------------
             ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), u8"[Tab/F1]: 커서 해제  [M]: 음소거 토글");
         }

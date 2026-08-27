@@ -44,6 +44,7 @@ using namespace DirectX;
 #include "DepthShaderClass.h"
 #include "ParticleSystem.h"
 #include "SoundManager.h"
+#include "WaterClass.h"
 #include "RenderContext.h"
 
 /////////////
@@ -104,6 +105,7 @@ private:
     void ExecuteMeshPass(const RenderContext& ctx);
     void ExecuteInstancingPass(const RenderContext& ctx);
     void ExecuteSkinnedPass(const RenderContext& ctx);
+    void ExecuteWaterPass(const RenderContext& ctx);
     void ExecuteParticlePass(const RenderContext& ctx);
     void ExecuteUIPass(const RenderContext& ctx);
 
@@ -116,7 +118,7 @@ private:
     std::unique_ptr<D3DClass> m_D3D;
     std::unique_ptr<CameraClass> m_Camera;
 
-    // ========== Managers ==========
+    // ========== Managers & Systems ==========
     LightManager m_lightManager;
     ProjectileSystem m_projectileSystem;
     AnimalQuestSystem m_questSystem;
@@ -124,6 +126,9 @@ private:
     SceneManager m_sceneManager;
     ParticleSystem m_particleSystem;
     SoundManager m_soundManager;
+    WaterClass m_water;
+
+    float m_gameTime = 0.0f;
 
     // ========== Shaders (Smart Pointer RAII) ==========
     std::unique_ptr<TextureShaderClass> m_TextureShader;
