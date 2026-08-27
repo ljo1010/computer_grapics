@@ -12,6 +12,10 @@
 #include "imgui_impl_win32.h"
 #include "imgui_impl_dx11.h"
 
+// 이벤트 버스 헤더
+#include "Event.h"
+#include "EventBus.h"
+
 extern D3DClass* g_D3D;
 
 using namespace DirectX;
@@ -107,6 +111,9 @@ bool GraphicsClass::Initialize(int screenWidth, int screenHeight, HWND hwnd)
         return false;
     }
 
+    // ========== Sound Manager (BGM 및 효과음 이벤트 연동) ==========
+    m_soundManager.Initialize(hwnd);
+
     // ========== UI ==========
     m_Bitmap = std::make_unique<BitmapClass>();
     if (!m_Bitmap) return false;
@@ -167,6 +174,7 @@ void GraphicsClass::Shutdown()
     // ImGui 해제
     ShutdownImGui();
 
+    m_soundManager.Shutdown();
     m_particleSystem.Shutdown();
 
     if (m_DepthShader) { m_DepthShader->Shutdown(); m_DepthShader.reset(); }
@@ -241,6 +249,15 @@ bool GraphicsClass::Frame(int mouseDX, int mouseDY)
     }
     prevRKeyDown = currRKeyDown;
 
+    // [M] 키: 사운드 전체 음소거 토글
+    static bool prevMKeyDown = false;
+    bool currMKeyDown = (GetAsyncKeyState('M') & 0x8000) != 0;
+    if (currMKeyDown && !prevMKeyDown)
+    {
+        m_soundManager.ToggleMute();
+    }
+    prevMKeyDown = currMKeyDown;
+
     // 4. [F] 키: 건초 던지기 발사 (마우스 좌클릭 제거, 오직 F키로만 발사)
     static bool prevFKeyDown = false;
     bool currFKeyDown = (GetAsyncKeyState('F') & 0x8000) != 0;
@@ -251,6 +268,7 @@ bool GraphicsClass::Frame(int mouseDX, int mouseDY)
     {
         m_projectileSystem.Spawn(camPos, m_playerController.GetForward());
         m_questSystem.ConsumeAmmo();
+        EventBus::Get().Publish(HayThrownEvent{});
     }
     prevFKeyDown = currFKeyDown;
 
@@ -300,13 +318,41 @@ void GraphicsClass::SetInvertY(bool invert)
 }
 
 //////////////////////////////////////////////////////////////////
-// RenderShadowPass - 1st Pass: 광원 시점 깊이(Shadow Map) 렌더링
+// Render Context Builder
 //////////////////////////////////////////////////////////////////
-bool GraphicsClass::RenderShadowPass()
+RenderContext GraphicsClass::BuildRenderContext()
 {
-    if (!m_ShadowMap || !m_DepthShader) return false;
+    RenderContext ctx;
+    ctx.deviceContext = m_D3D->GetDeviceContext();
 
-    // 1. 플레이어 카메라 위치를 추적하는 Directional Light 뷰/직교 투영 행렬 생성 (어디를 이동해도 그림자 유지)
+    m_Camera->Render();
+    m_Camera->GetViewMatrix(ctx.viewMatrix);
+    m_D3D->GetWorldMatrix(ctx.worldMatrix);
+    m_D3D->GetProjectionMatrix(ctx.projectionMatrix);
+    m_D3D->GetOrthoMatrix(ctx.orthoMatrix);
+
+    m_lightManager.GetLightViewMatrix(ctx.lightViewMatrix);
+    m_lightManager.GetLightProjectionMatrix(ctx.lightProjectionMatrix);
+
+    ctx.cameraPosition = m_Camera ? m_Camera->GetPosition() : XMFLOAT3(0, 0, 0);
+    ctx.shadowMapSRV = m_ShadowMap ? m_ShadowMap->GetShaderResourceView() : nullptr;
+    ctx.shadowBias = m_lightManager.GetShadowBias();
+    ctx.shadowIntensity = m_lightManager.GetShadowIntensity();
+    ctx.enableShadow = m_lightManager.IsShadowEnabled();
+    ctx.enablePCF = m_lightManager.IsPcfEnabled();
+    ctx.wireframe = m_wireframeMode;
+
+    return ctx;
+}
+
+//////////////////////////////////////////////////////////////////
+// [Pass 1] Depth Shadow Pass: 광원 시점 깊이(Shadow Map) 렌더링
+//////////////////////////////////////////////////////////////////
+void GraphicsClass::ExecuteShadowPass()
+{
+    if (!m_ShadowMap || !m_DepthShader) return;
+
+    // 1. 플레이어 카메라 위치를 추적하는 Directional Light 뷰/직교 투영 행렬 생성
     XMFLOAT3 camPos = m_Camera ? m_Camera->GetPosition() : XMFLOAT3(0, 0, 0);
     m_lightManager.GenerateLightViewMatrix(XMFLOAT3(camPos.x, 0.0f, camPos.z), 100.0f);
     m_lightManager.GenerateLightProjectionMatrix(140.0f, 140.0f, 1.0f, 220.0f);
@@ -376,63 +422,33 @@ bool GraphicsClass::RenderShadowPass()
         }
     }
 
-    // 섀도우 패스 완료 후 OM 깊이 버퍼 언바인드 (메인 패스 SRV 바인딩 충돌 방지)
+    // 섀도우 패스 완료 후 OM 깊이 버퍼 언바인드
     ID3D11RenderTargetView* nullRTV = nullptr;
     m_D3D->GetDeviceContext()->OMSetRenderTargets(1, &nullRTV, nullptr);
-
-    return true;
 }
 
 //////////////////////////////////////////////////////////////////
-// Render - Main scene rendering (2-Pass 파이프라인)
+// [Pass 2] Skybox & Environment Pass
 //////////////////////////////////////////////////////////////////
-bool GraphicsClass::Render()
+void GraphicsClass::ExecuteSkyboxPass(const RenderContext& ctx)
 {
-    // ============================================================
-    // [Pass 1] 섀도우 패스: 광원 시점 Depth 맵 기록
-    // ============================================================
-    RenderShadowPass();
-
-    // ============================================================
-    // [Pass 2] 메인 렌더 패스: 카메라 시점 + 그림자 맵 합성 렌더링
-    // ============================================================
-    XMMATRIX worldMatrix, viewMatrix, projectionMatrix, orthoMatrix;
-
-    m_D3D->BeginScene(0.0f, 0.0f, 0.0f, 1.0f);
-
-    m_Camera->Render();
-    m_Camera->GetViewMatrix(viewMatrix);
-    m_D3D->GetWorldMatrix(worldMatrix);
-    m_D3D->GetProjectionMatrix(projectionMatrix);
-    m_D3D->GetOrthoMatrix(orthoMatrix);
-
-    // 광원 뷰/투영 행렬 및 섀도우 파라미터 획득
-    XMMATRIX lightViewMatrix, lightProjectionMatrix;
-    m_lightManager.GetLightViewMatrix(lightViewMatrix);
-    m_lightManager.GetLightProjectionMatrix(lightProjectionMatrix);
-
-    ID3D11ShaderResourceView* shadowMapSRV = m_ShadowMap ? m_ShadowMap->GetShaderResourceView() : nullptr;
-    float shadowBias = m_lightManager.GetShadowBias();
-    float shadowIntensity = m_lightManager.GetShadowIntensity();
-    bool enableShadow = m_lightManager.IsShadowEnabled();
-    bool enablePCF = m_lightManager.IsPcfEnabled();
-
-    // ========== Skybox ==========
     if (m_showSkybox)
     {
-        XMFLOAT3 camPos = m_Camera->GetPosition();
-        m_sky.Update(camPos, viewMatrix, projectionMatrix);
+        m_sky.Update(ctx.cameraPosition, ctx.viewMatrix, ctx.projectionMatrix);
         m_sky.Draw();
         m_D3D->GetDeviceContext()->OMSetDepthStencilState(nullptr, 0);
         m_D3D->GetDeviceContext()->RSSetState(nullptr);
     }
+}
 
+//////////////////////////////////////////////////////////////////
+// [Pass 3] MultiTexture Terrain Pass (지형, 그림자, 거리 안개)
+//////////////////////////////////////////////////////////////////
+void GraphicsClass::ExecuteTerrainPass(const RenderContext& ctx)
+{
     m_D3D->TurnZBufferOn();
+    m_D3D->SetWireframe(ctx.wireframe);
 
-    // 3D 지형 및 모델 렌더링에 와이어프레임 옵션 적용
-    m_D3D->SetWireframe(m_wireframeMode);
-
-    // ========== Plane (Ground) - 실시간 그림자 적용 ==========
     FbxModelClass* planeFbx = m_sceneManager.GetPlane();
     if (planeFbx && m_MultiTexShader)
     {
@@ -442,9 +458,8 @@ bool GraphicsClass::Render()
             XMMatrixScaling(scale, 1.0f, scale) *
             XMMatrixTranslation(planePos.x, planePos.y, planePos.z);
 
-        planeFbx->Render(m_D3D->GetDeviceContext());
+        planeFbx->Render(ctx.deviceContext);
 
-        // 바닥 주변광을 0.12f로 낮춰 직사광/그림자 명암비(Contrast)를 대폭 강화
         XMFLOAT4 ambientColor = XMFLOAT4(0.12f, 0.12f, 0.12f, 1.0f);
         XMFLOAT3 p0Pos, p1Pos;
         XMFLOAT4 p0Color, p1Color;
@@ -467,9 +482,9 @@ bool GraphicsClass::Render()
         }
 
         m_MultiTexShader->Render(
-            m_D3D->GetDeviceContext(),
+            ctx.deviceContext,
             planeFbx->GetIndexCount(),
-            localWorld, viewMatrix, projectionMatrix,
+            localWorld, ctx.viewMatrix, ctx.projectionMatrix,
             m_sceneManager.GetTex0(),
             m_sceneManager.GetTex1(),
             m_sceneManager.GetTexAlpha(),
@@ -480,22 +495,27 @@ bool GraphicsClass::Render()
             m_lightManager.GetAmbient(),
             m_lightManager.GetDiffuse(),
             m_lightManager.GetDirection(),
-            shadowMapSRV,
-            lightViewMatrix,
-            lightProjectionMatrix,
-            shadowBias,
-            shadowIntensity,
-            enableShadow,
-            enablePCF,
-            m_Camera->GetPosition(),
+            ctx.shadowMapSRV,
+            ctx.lightViewMatrix,
+            ctx.lightProjectionMatrix,
+            ctx.shadowBias,
+            ctx.shadowIntensity,
+            ctx.enableShadow,
+            ctx.enablePCF,
+            ctx.cameraPosition,
             m_lightManager.GetFogColor(),
             m_lightManager.GetFogStart(),
             m_lightManager.GetFogEnd(),
             m_lightManager.IsFogEnabled()
         );
     }
+}
 
-    // ========== FBX Models ==========
+//////////////////////////////////////////////////////////////////
+// [Pass 4] Static & Dynamic Mesh Pass (소품, 동물, 건초)
+//////////////////////////////////////////////////////////////////
+void GraphicsClass::ExecuteMeshPass(const RenderContext& ctx)
+{
     size_t fenceIndex = m_sceneManager.GetFenceIndex();
     size_t treeIndex = m_sceneManager.GetTreeIndex();
     size_t hayIndex = m_sceneManager.GetHayIndex();
@@ -503,15 +523,9 @@ bool GraphicsClass::Render()
 
     for (size_t i = 0; i < m_sceneManager.GetFbxCount(); ++i)
     {
-        // Skip instanced models
-        if (i == fenceIndex || i == treeIndex || i == hayIndex)
-            continue;
-
-        // Visibility checks
-        if (i == 0 && !m_sceneManager.IsFarmerVisible())
-            continue;
-        if (i == pigIndex && !m_sceneManager.IsPigVisible())
-            continue;
+        if (i == fenceIndex || i == treeIndex || i == hayIndex) continue;
+        if (i == 0 && !m_sceneManager.IsFarmerVisible()) continue;
+        if (i == pigIndex && !m_sceneManager.IsPigVisible()) continue;
 
         FbxModelClass* f = m_sceneManager.GetFbxModel(i);
         if (!f) continue;
@@ -519,7 +533,6 @@ bool GraphicsClass::Render()
         XMFLOAT3 p = m_sceneManager.GetFbxPosition(i);
         float rotY = 0.0f;
 
-        // 퀘스트 동물 위치 및 뜀뛰기 모션 동기화 (말, 돼지, 닭, 염소 등)
         for (const auto& a : m_questSystem.GetAnimals())
         {
             if (a.fbxIndex == i)
@@ -530,22 +543,18 @@ bool GraphicsClass::Render()
             }
         }
 
-        float scale = 1.0f;
-        XMMATRIX fbxWorld =
-            XMMatrixScaling(scale, scale, scale) *
-            XMMatrixRotationY(rotY) *
-            XMMatrixTranslation(p.x, p.y, p.z);
+        XMMATRIX fbxWorld = XMMatrixRotationY(rotY) * XMMatrixTranslation(p.x, p.y, p.z);
 
-        f->Render(m_D3D->GetDeviceContext());
+        f->Render(ctx.deviceContext);
 
         if (m_LightShader)
         {
             m_LightShader->RenderEx(
-                m_D3D->GetDeviceContext(),
+                ctx.deviceContext,
                 f->GetIndexCount(),
-                fbxWorld, viewMatrix, projectionMatrix,
+                fbxWorld, ctx.viewMatrix, ctx.projectionMatrix,
                 f->GetTexture(),
-                m_Camera->GetPosition(),
+                ctx.cameraPosition,
                 m_lightManager.GetAmbient(),
                 m_lightManager.GetDiffuse(),
                 m_lightManager.GetDirection(),
@@ -561,13 +570,13 @@ bool GraphicsClass::Render()
                 m_lightManager.IsAmbientEnabled(),
                 m_lightManager.IsDiffuseEnabled(),
                 m_lightManager.IsSpecularEnabled(),
-                shadowMapSRV,
-                lightViewMatrix,
-                lightProjectionMatrix,
-                shadowBias,
-                shadowIntensity,
-                enableShadow,
-                enablePCF,
+                ctx.shadowMapSRV,
+                ctx.lightViewMatrix,
+                ctx.lightProjectionMatrix,
+                ctx.shadowBias,
+                ctx.shadowIntensity,
+                ctx.enableShadow,
+                ctx.enablePCF,
                 m_lightManager.GetFogColor(),
                 m_lightManager.GetFogStart(),
                 m_lightManager.GetFogEnd(),
@@ -576,43 +585,7 @@ bool GraphicsClass::Render()
         }
     }
 
-    // ========== Fence Instances ==========
-    if (fenceIndex < m_sceneManager.GetFbxCount())
-    {
-        FbxModelClass* fenceModel = m_sceneManager.GetFbxModel(fenceIndex);
-        if (fenceModel && fenceModel->GetInstanceCount() > 0 && m_TextureShader)
-        {
-            fenceModel->RenderInstanced(m_D3D->GetDeviceContext());
-            XMMATRIX fenceWorld = XMMatrixIdentity();
-            m_TextureShader->RenderInstanced(
-                m_D3D->GetDeviceContext(),
-                fenceModel->GetIndexCount(),
-                fenceModel->GetInstanceCount(),
-                fenceWorld, viewMatrix, projectionMatrix,
-                fenceModel->GetTexture()
-            );
-        }
-    }
-
-    // ========== Tree Instances ==========
-    if (treeIndex < m_sceneManager.GetFbxCount())
-    {
-        FbxModelClass* treeModel = m_sceneManager.GetFbxModel(treeIndex);
-        if (treeModel && treeModel->GetInstanceCount() > 0 && m_TextureShader)
-        {
-            treeModel->RenderInstanced(m_D3D->GetDeviceContext());
-            XMMATRIX world = XMMatrixIdentity();
-            m_TextureShader->RenderInstanced(
-                m_D3D->GetDeviceContext(),
-                treeModel->GetIndexCount(),
-                treeModel->GetInstanceCount(),
-                world, viewMatrix, projectionMatrix,
-                treeModel->GetTexture()
-            );
-        }
-    }
-
-    // ========== Hay & Projectiles ==========
+    // Hay & Projectiles
     if (hayIndex < m_sceneManager.GetFbxCount())
     {
         FbxModelClass* hayModel = m_sceneManager.GetFbxModel(hayIndex);
@@ -621,109 +594,92 @@ bool GraphicsClass::Render()
             if (m_questSystem.IsHayAvailable())
             {
                 XMFLOAT3 p = m_questSystem.GetHayPosition();
-                float scale = 1.0f;
-                XMMATRIX world =
-                    XMMatrixScaling(scale, scale, scale) *
-                    XMMatrixTranslation(p.x, p.y, p.z);
-
-                hayModel->Render(m_D3D->GetDeviceContext());
+                XMMATRIX world = XMMatrixScaling(1.0f, 1.0f, 1.0f) * XMMatrixTranslation(p.x, p.y, p.z);
+                hayModel->Render(ctx.deviceContext);
                 m_LightShader->RenderEx(
-                    m_D3D->GetDeviceContext(),
-                    hayModel->GetIndexCount(),
-                    world, viewMatrix, projectionMatrix,
-                    hayModel->GetTexture(),
-                    m_Camera->GetPosition(),
-                    m_lightManager.GetAmbient(),
-                    m_lightManager.GetDiffuse(),
-                    m_lightManager.GetDirection(),
-                    m_lightManager.GetSpecularColor(),
-                    m_lightManager.GetSpecularPower(),
-                    m_lightManager.GetPointPositions(),
-                    m_lightManager.GetPointDiffuse(),
-                    m_lightManager.GetPointCount(),
-                    m_lightManager.GetAttenKc(),
-                    m_lightManager.GetAttenKl(),
-                    m_lightManager.GetAttenKq(),
-                    m_lightManager.GetIntensityScale(),
-                    m_lightManager.IsAmbientEnabled(),
-                    m_lightManager.IsDiffuseEnabled(),
-                    m_lightManager.IsSpecularEnabled(),
-                    shadowMapSRV,
-                    lightViewMatrix,
-                    lightProjectionMatrix,
-                    shadowBias,
-                    shadowIntensity,
-                    enableShadow,
-                    enablePCF,
-                    m_lightManager.GetFogColor(),
-                    m_lightManager.GetFogStart(),
-                    m_lightManager.GetFogEnd(),
-                    m_lightManager.IsFogEnabled()
+                    ctx.deviceContext, hayModel->GetIndexCount(),
+                    world, ctx.viewMatrix, ctx.projectionMatrix,
+                    hayModel->GetTexture(), ctx.cameraPosition,
+                    m_lightManager.GetAmbient(), m_lightManager.GetDiffuse(), m_lightManager.GetDirection(),
+                    m_lightManager.GetSpecularColor(), m_lightManager.GetSpecularPower(),
+                    m_lightManager.GetPointPositions(), m_lightManager.GetPointDiffuse(), m_lightManager.GetPointCount(),
+                    m_lightManager.GetAttenKc(), m_lightManager.GetAttenKl(), m_lightManager.GetAttenKq(),
+                    m_lightManager.GetIntensityScale(), m_lightManager.IsAmbientEnabled(), m_lightManager.IsDiffuseEnabled(), m_lightManager.IsSpecularEnabled(),
+                    ctx.shadowMapSRV, ctx.lightViewMatrix, ctx.lightProjectionMatrix,
+                    ctx.shadowBias, ctx.shadowIntensity, ctx.enableShadow, ctx.enablePCF,
+                    m_lightManager.GetFogColor(), m_lightManager.GetFogStart(), m_lightManager.GetFogEnd(), m_lightManager.IsFogEnabled()
                 );
             }
 
-            // Projectiles
             for (const auto& proj : m_projectileSystem.GetProjectiles())
             {
-                XMMATRIX world =
-                    XMMatrixScaling(0.7f, 0.7f, 0.7f) *
-                    XMMatrixTranslation(proj.pos.x, proj.pos.y, proj.pos.z);
-
-                hayModel->Render(m_D3D->GetDeviceContext());
+                XMMATRIX world = XMMatrixScaling(0.7f, 0.7f, 0.7f) * XMMatrixTranslation(proj.pos.x, proj.pos.y, proj.pos.z);
+                hayModel->Render(ctx.deviceContext);
                 m_LightShader->RenderEx(
-                    m_D3D->GetDeviceContext(),
-                    hayModel->GetIndexCount(),
-                    world, viewMatrix, projectionMatrix,
-                    hayModel->GetTexture(),
-                    m_Camera->GetPosition(),
-                    m_lightManager.GetAmbient(),
-                    m_lightManager.GetDiffuse(),
-                    m_lightManager.GetDirection(),
-                    m_lightManager.GetSpecularColor(),
-                    m_lightManager.GetSpecularPower(),
-                    m_lightManager.GetPointPositions(),
-                    m_lightManager.GetPointDiffuse(),
-                    m_lightManager.GetPointCount(),
-                    m_lightManager.GetAttenKc(),
-                    m_lightManager.GetAttenKl(),
-                    m_lightManager.GetAttenKq(),
-                    m_lightManager.GetIntensityScale(),
-                    m_lightManager.IsAmbientEnabled(),
-                    m_lightManager.IsDiffuseEnabled(),
-                    m_lightManager.IsSpecularEnabled(),
-                    shadowMapSRV,
-                    lightViewMatrix,
-                    lightProjectionMatrix,
-                    shadowBias,
-                    shadowIntensity,
-                    enableShadow,
-                    enablePCF,
-                    m_lightManager.GetFogColor(),
-                    m_lightManager.GetFogStart(),
-                    m_lightManager.GetFogEnd(),
-                    m_lightManager.IsFogEnabled()
+                    ctx.deviceContext, hayModel->GetIndexCount(),
+                    world, ctx.viewMatrix, ctx.projectionMatrix,
+                    hayModel->GetTexture(), ctx.cameraPosition,
+                    m_lightManager.GetAmbient(), m_lightManager.GetDiffuse(), m_lightManager.GetDirection(),
+                    m_lightManager.GetSpecularColor(), m_lightManager.GetSpecularPower(),
+                    m_lightManager.GetPointPositions(), m_lightManager.GetPointDiffuse(), m_lightManager.GetPointCount(),
+                    m_lightManager.GetAttenKc(), m_lightManager.GetAttenKl(), m_lightManager.GetAttenKq(),
+                    m_lightManager.GetIntensityScale(), m_lightManager.IsAmbientEnabled(), m_lightManager.IsDiffuseEnabled(), m_lightManager.IsSpecularEnabled(),
+                    ctx.shadowMapSRV, ctx.lightViewMatrix, ctx.lightProjectionMatrix,
+                    ctx.shadowBias, ctx.shadowIntensity, ctx.enableShadow, ctx.enablePCF,
+                    m_lightManager.GetFogColor(), m_lightManager.GetFogStart(), m_lightManager.GetFogEnd(), m_lightManager.IsFogEnabled()
                 );
             }
         }
     }
+}
 
-    // ========== Skin Models ==========
-    SkinModel* cowModel = m_sceneManager.GetCowModel();
-    //if (cowModel && m_SkinShader)
-    //{
-    //    float scale = 3.0f;
-    //    XMMATRIX cowWorld =
-    //        XMMatrixScaling(scale, scale, scale) *
-    //        XMMatrixTranslation(0.0f, 1.0f, 5.0f);
+//////////////////////////////////////////////////////////////////
+// [Pass 5] Hardware Instancing Pass (울타리, 나무 대량 렌더링)
+//////////////////////////////////////////////////////////////////
+void GraphicsClass::ExecuteInstancingPass(const RenderContext& ctx)
+{
+    size_t fenceIndex = m_sceneManager.GetFenceIndex();
+    if (fenceIndex < m_sceneManager.GetFbxCount())
+    {
+        FbxModelClass* fenceModel = m_sceneManager.GetFbxModel(fenceIndex);
+        if (fenceModel && fenceModel->GetInstanceCount() > 0 && m_TextureShader)
+        {
+            fenceModel->RenderInstanced(ctx.deviceContext);
+            XMMATRIX fenceWorld = XMMatrixIdentity();
+            m_TextureShader->RenderInstanced(
+                ctx.deviceContext,
+                fenceModel->GetIndexCount(),
+                fenceModel->GetInstanceCount(),
+                fenceWorld, ctx.viewMatrix, ctx.projectionMatrix,
+                fenceModel->GetTexture()
+            );
+        }
+    }
 
-    //    cowModel->RenderSkinned(
-    //        m_D3D->GetDeviceContext(),
-    //        m_SkinShader,
-    //        cowWorld, viewMatrix, projectionMatrix,
-    //        m_sceneManager.GetCowTexture()
-    //    );
-    //}
+    size_t treeIndex = m_sceneManager.GetTreeIndex();
+    if (treeIndex < m_sceneManager.GetFbxCount())
+    {
+        FbxModelClass* treeModel = m_sceneManager.GetFbxModel(treeIndex);
+        if (treeModel && treeModel->GetInstanceCount() > 0 && m_TextureShader)
+        {
+            treeModel->RenderInstanced(ctx.deviceContext);
+            XMMATRIX world = XMMatrixIdentity();
+            m_TextureShader->RenderInstanced(
+                ctx.deviceContext,
+                treeModel->GetIndexCount(),
+                treeModel->GetInstanceCount(),
+                world, ctx.viewMatrix, ctx.projectionMatrix,
+                treeModel->GetTexture()
+            );
+        }
+    }
+}
 
+//////////////////////////////////////////////////////////////////
+// [Pass 6] Skinned Animation Pass (캐릭터 스키닝)
+//////////////////////////////////////////////////////////////////
+void GraphicsClass::ExecuteSkinnedPass(const RenderContext& ctx)
+{
     SkinModel* farmGirl = m_sceneManager.GetCurrentFarmGirl();
     if (farmGirl && m_SkinShader)
     {
@@ -735,20 +691,63 @@ bool GraphicsClass::Render()
             XMMatrixTranslation(0.0f, 0.7f, 1.0f);
 
         farmGirl->RenderSkinned(
-            m_D3D->GetDeviceContext(),
+            ctx.deviceContext,
             m_SkinShader.get(),
-            girlWorld, viewMatrix, projectionMatrix,
+            girlWorld, ctx.viewMatrix, ctx.projectionMatrix,
             m_sceneManager.GetFarmGirlTexture()
         );
     }
+}
 
-    // ========== 3D Particle System (동물 먹이 반응 파티클 이펙트) ==========
-    m_particleSystem.Render(m_D3D->GetDeviceContext(), viewMatrix, projectionMatrix, m_Camera->GetPosition());
+//////////////////////////////////////////////////////////////////
+// [Pass 7] Particle Pass (절차적 별빛 빌보드 파티클)
+//////////////////////////////////////////////////////////////////
+void GraphicsClass::ExecuteParticlePass(const RenderContext& ctx)
+{
+    m_particleSystem.Render(ctx.deviceContext, ctx.viewMatrix, ctx.projectionMatrix, ctx.cameraPosition);
+}
 
-    // ========== Dear ImGui 디버그 UI 및 인게임 퀘스트 HUD 렌더링 ==========
-    // ImGui는 2D 인터페이스이므로 와이어프레임을 끄고 솔리드 모드로 렌더링합니다.
+//////////////////////////////////////////////////////////////////
+// [Pass 8] UI & ImGui Pass (2D HUD 및 디버그 패널)
+//////////////////////////////////////////////////////////////////
+void GraphicsClass::ExecuteUIPass(const RenderContext& ctx)
+{
     m_D3D->SetWireframe(false);
     RenderImGui();
+}
+
+//////////////////////////////////////////////////////////////////
+// Render - Main Render Pipeline Coordinator
+//////////////////////////////////////////////////////////////////
+bool GraphicsClass::Render()
+{
+    // 1. [Pass 1: Depth Shadow Pass] 광원 시점 섀도우 맵 깊이 버퍼 기록
+    ExecuteShadowPass();
+
+    // 2. 메인 백버퍼 클리어 및 프레임 렌더 컨텍스트 생성
+    m_D3D->BeginScene(0.0f, 0.0f, 0.0f, 1.0f);
+    RenderContext ctx = BuildRenderContext();
+
+    // 3. [Pass 2: Skybox Pass] 대기 및 하늘 배경 렌더링
+    ExecuteSkyboxPass(ctx);
+
+    // 4. [Pass 3: MultiTexture Terrain Pass] 바닥 지형 스플래팅 및 그림자/안개 합성
+    ExecuteTerrainPass(ctx);
+
+    // 5. [Pass 4: Static/Dynamic Mesh Pass] 농장 소품, 동물, 건초 발사체 렌더링
+    ExecuteMeshPass(ctx);
+
+    // 6. [Pass 5: Hardware Instancing Pass] 울타리/나무 하드웨어 인스턴싱 대량 렌더링
+    ExecuteInstancingPass(ctx);
+
+    // 7. [Pass 6: Skinned Animation Pass] 농장 소녀 스켈레탈 본 변형 애니메이션
+    ExecuteSkinnedPass(ctx);
+
+    // 8. [Pass 7: Particle Billboard Pass] 동물 먹이 반응 절차적 별빛 파티클 렌더링
+    ExecuteParticlePass(ctx);
+
+    // 9. [Pass 8: UI & ImGui Debug Pass] 인게임 퀘스트 HUD 및 실시간 디버그 패널
+    ExecuteUIPass(ctx);
 
     m_D3D->EndScene();
     return true;
@@ -1133,9 +1132,37 @@ void GraphicsClass::RenderImGui()
             }
 
             // ------------------------------------------------------------
-            // 7. 단축키 안내
+            // 7. 오디오 및 효과음 시스템 (Sound System - EventBus 연동)
             // ------------------------------------------------------------
-            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), u8"[Tab] 또는 [F1] 키: 마우스 커서 해제 / 1인칭 조작 모드 전환");
+            if (ImGui::CollapsingHeader(u8"오디오 및 효과음 (Audio & Sound)", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                bool isMuted = m_soundManager.IsMuted();
+                if (ImGui::Checkbox(u8"전체 음소거 (Mute) [M 키]", &isMuted))
+                {
+                    m_soundManager.SetMuted(isMuted);
+                }
+
+                if (ImGui::Button(u8"던지기 효과음"))
+                {
+                    m_soundManager.PlayThrowSound();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button(u8"먹이주기 벨"))
+                {
+                    m_soundManager.PlayFeedSound();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button(u8"승리 팡파레"))
+                {
+                    m_soundManager.PlayCompleteSound();
+                }
+                ImGui::Separator();
+            }
+
+            // ------------------------------------------------------------
+            // 8. 단축키 안내
+            // ------------------------------------------------------------
+            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), u8"[Tab/F1]: 커서 해제  [M]: 음소거 토글");
         }
         ImGui::End();
     }

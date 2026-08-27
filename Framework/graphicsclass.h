@@ -43,6 +43,8 @@ using namespace DirectX;
 #include "ShadowMapClass.h"
 #include "DepthShaderClass.h"
 #include "ParticleSystem.h"
+#include "SoundManager.h"
+#include "RenderContext.h"
 
 /////////////
 // GLOBALS //
@@ -89,11 +91,21 @@ public:
     void SetPerformance(int fps, int cpu) { m_fps = fps; m_cpu = cpu; }
 
 private:
-    // Render functions (2-Pass 렌더링 구조)
+    // Render functions (Render Pass Architecture)
     bool Render();
-    bool RenderShadowPass();
     bool RenderTitle();
-    void RenderQuestHUD(); // 인게임 퀘스트 HUD 오버레이
+    void RenderQuestHUD();
+
+    // 렌더 패스 파이프라인 단계별 실행 함수
+    RenderContext BuildRenderContext();
+    void ExecuteShadowPass();
+    void ExecuteSkyboxPass(const RenderContext& ctx);
+    void ExecuteTerrainPass(const RenderContext& ctx);
+    void ExecuteMeshPass(const RenderContext& ctx);
+    void ExecuteInstancingPass(const RenderContext& ctx);
+    void ExecuteSkinnedPass(const RenderContext& ctx);
+    void ExecuteParticlePass(const RenderContext& ctx);
+    void ExecuteUIPass(const RenderContext& ctx);
 
     // Scene state
     enum SceneType { SCENE_TITLE, SCENE_MAIN };
@@ -111,6 +123,7 @@ private:
     PlayerController m_playerController;
     SceneManager m_sceneManager;
     ParticleSystem m_particleSystem;
+    SoundManager m_soundManager;
 
     // ========== Shaders (Smart Pointer RAII) ==========
     std::unique_ptr<TextureShaderClass> m_TextureShader;

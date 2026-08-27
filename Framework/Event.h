@@ -12,6 +12,11 @@ struct AnimalFedEvent
     bool isAllCompleted; // 4마리 모두 완료 여부
 };
 
+// 건초 투사체 발사 이벤트
+struct HayThrownEvent
+{
+};
+
 // 건초 탄약 충돌 이벤트 (지형 또는 프롭 충돌)
 struct HayImpactEvent
 {

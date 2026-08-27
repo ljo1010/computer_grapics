@@ -181,6 +181,7 @@
     <ClCompile Include="AnimalQuestSystem.cpp" />
     <ClCompile Include="AnimalState.cpp" />
     <ClCompile Include="ParticleSystem.cpp" />
+    <ClCompile Include="SoundManager.cpp" />
     <ClCompile Include="SkinModel.cpp" />
     <ClCompile Include="SkinShaderClass.cpp" />
     <ClCompile Include="Skybox.cpp" />
@@ -231,6 +232,9 @@
     <ClInclude Include="AnimalQuestSystem.h" />
     <ClInclude Include="AnimalState.h" />
     <ClInclude Include="ParticleSystem.h" />
+    <ClInclude Include="SoundManager.h" />
+    <ClInclude Include="RenderContext.h" />
+    <ClInclude Include="IRenderPass.h" />
     <ClInclude Include="Event.h" />
     <ClInclude Include="EventBus.h" />
     <ClInclude Include="ResourceManager.h" />

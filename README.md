@@ -67,6 +67,15 @@ DirectX 11 및 C++ 기반으로 제작된 실시간 3D 그래픽스 및 게임�
    - `GraphicsClass`의 핵심 엔진 서브시스템(D3DClass, CameraClass, Shaders, ShadowMap, UI)에 생 포인터 대신 `std::unique_ptr` 적용
    - 수동 `delete`를 100% 제거하고 자원의 획득과 해제를 객체 생명주기에 바인딩하여 예외 안전성(Exception Safety) 및 메모리 누수 제로(Zero Leak) 달성
 
+7. 렌더 패스 파이프라인 아키텍처 (Render Pass Pipeline Pattern)
+   - 거대한 단일 렌더 함수를 상용 렌더 파이프라인 수준의 단계별 렌더 패스(Pass 1~8)로 모듈화 분리
+   - `RenderContext`를 통해 행렬, 광원, 섀도우 SRV를 공유하며 Shadow -> Skybox -> Terrain -> Mesh -> Instancing -> Skinned -> Particle -> UI 순서로 체계적 실행
+
+8. 이벤트 기반 오디오 및 사운드 시스템 (Event-Driven Audio System)
+   - DirectSound 기반의 배경음악(Lofi BGM) 루프 재생 및 절차적 16비트 PCM 합성 효과음 3종 탑재
+   - 옵저버 패턴 연동: 건초 발사 시 '스윙음', 먹이 적중 시 '띠링~ 벨소리', 미션 올클리어 시 '승리 팡파레' 자동 재생
+   - [M] 키 및 ImGui 패널을 통한 실시간 음소거(Mute) 토글 지원
+
 ---
 
 ## 2. 핵심 소스 코드 가이드 (중점적으로 보아야 할 파일)
@@ -113,6 +122,12 @@ DirectX 11 및 C++ 기반으로 제작된 실시간 3D 그래픽스 및 게임�
 - Framework/AnimalState.h / .cpp
   - IAnimalState 기반 FSM(상태 패턴) 구현체 (HungryState, HappyHopState, SatisfiedState)로 각 상태의 고유 행동과 생명주기를 캡슐화한 클래스입니다.
 
+- Framework/RenderContext.h / IRenderPass.h
+  - 렌더 패스 파이프라인에서 공유되는 프레임 컨텍스트 및 렌더 패스 전략 패턴(Strategy Pattern) 인터페이스입니다.
+
+- Framework/SoundManager.h / .cpp
+  - DirectSound 기반 배경음악(Lofi BGM) 및 이벤트 버스 구독형 효과음(발사음, 먹이 적중음, 승리 팡파레) 관리자입니다.
+
 - Framework/LightManager.h / .cpp
   - 태양의 3차원 자전 궤도(UpdateSunOrbit), 광원 뷰/투영 행렬 생성, 그림자 파라미터, 대기 안개 속성(Fog Color, Start, End)을 총괄 관리하는 클래스입니다.
 
@@ -123,7 +138,7 @@ DirectX 11 및 C++ 기반으로 제작된 실시간 3D 그래픽스 및 게임�
   - 1인칭 FPS 이동(WASD), 마우스 회전(Yaw/Pitch), 울타리 충돌 검사(AABB)를 수행하는 플레이어 조작기입니다.
 
 - Framework/graphicsclass.h / .cpp
-  - 전체 렌더링 파이프라인(섀도우 패스 -> 메인 씬 패스 -> 파티클 패스 -> 2D HUD -> ImGui 패스)을 통합 실행하는 메인 그래픽스 클래스입니다.
+  - 전체 렌더링 파이프라인(섀도우 패스 -> 지형 패스 -> 메쉬 패스 -> 인스턴싱 패스 -> 스키닝 패스 -> 파티클 패스 -> UI 패스)을 통합 실행하는 메인 그래픽스 클래스입니다.
 
 ---
 
@@ -135,6 +150,7 @@ DirectX 11 및 C++ 기반으로 제작된 실시간 3D 그래픽스 및 게임�
 - F: 건초 던지기 발사 (보유 탄약 소모)
 - E: 가까이 있는 동물에게 직접 먹이 주기
 - R: 퀘스트 리셋 (동물들을 다시 배고픔 상태로 초기화)
+- M: 오디오 음소거 토글 (BGM 및 효과음 On/Off)
 - 1, 2: 농장 소녀 캐릭터 스키닝 애니메이션 전환
 - Tab 또는 F1: 마우스 커서 해제 / 1인칭 모드 토글 (ImGui 조작 모드)
 
