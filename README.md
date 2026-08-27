@@ -63,6 +63,10 @@ DirectX 11 및 C++ 기반으로 제작된 실시간 3D 그래픽스 및 게임�
    - 동물의 행동과 상태를 단순 플래그(`bool`)가 아닌 `IAnimalState` 기반 상태 클래스(`HungryState`, `HappyHopState`, `SatisfiedState`)로 캡슐화
    - 객체 스스로 상태 전이(State Transition)와 애니메이션 모션(숨쉬기, 사인파 뜀뛰기, 만족 대기)을 수행하여 개방-폐쇄 원칙(OCP) 실현
 
+6. 모던 C++ 스마트 포인터 및 RAII 메모리 관리 (Smart Pointers & RAII)
+   - `GraphicsClass`의 핵심 엔진 서브시스템(D3DClass, CameraClass, Shaders, ShadowMap, UI)에 생 포인터 대신 `std::unique_ptr` 적용
+   - 수동 `delete`를 100% 제거하고 자원의 획득과 해제를 객체 생명주기에 바인딩하여 예외 안전성(Exception Safety) 및 메모리 누수 제로(Zero Leak) 달성
+
 ---
 
 ## 2. 핵심 소스 코드 가이드 (중점적으로 보아야 할 파일)

@@ -9,6 +9,7 @@
 // STD/DirectX
 ////////////////
 #include <vector>
+#include <memory>
 #include <DirectXMath.h>
 #include <wrl/client.h>
 #include <d3d11.h>
@@ -58,7 +59,8 @@ class GraphicsClass
 {
 public:
     GraphicsClass();
-    GraphicsClass(const GraphicsClass&);
+    GraphicsClass(const GraphicsClass&) = delete;
+    GraphicsClass& operator=(const GraphicsClass&) = delete;
     ~GraphicsClass();
 
     // Init / Shutdown
@@ -98,9 +100,9 @@ private:
     SceneType m_scene;
 
 private:
-    // ========== Core ==========
-    D3DClass* m_D3D = nullptr;
-    CameraClass* m_Camera = nullptr;
+    // ========== Core (Smart Pointer RAII) ==========
+    std::unique_ptr<D3DClass> m_D3D;
+    std::unique_ptr<CameraClass> m_Camera;
 
     // ========== Managers ==========
     LightManager m_lightManager;
@@ -110,22 +112,22 @@ private:
     SceneManager m_sceneManager;
     ParticleSystem m_particleSystem;
 
-    // ========== Shaders ==========
-    TextureShaderClass* m_TextureShader = nullptr;
-    MultiTextureShaderClass* m_MultiTexShader = nullptr;
-    LightShaderClass* m_LightShader = nullptr;
-    SkinShaderClass* m_SkinShader = nullptr;
-    DepthShaderClass* m_DepthShader = nullptr;
+    // ========== Shaders (Smart Pointer RAII) ==========
+    std::unique_ptr<TextureShaderClass> m_TextureShader;
+    std::unique_ptr<MultiTextureShaderClass> m_MultiTexShader;
+    std::unique_ptr<LightShaderClass> m_LightShader;
+    std::unique_ptr<SkinShaderClass> m_SkinShader;
+    std::unique_ptr<DepthShaderClass> m_DepthShader;
 
     // ========== Shadow Mapping ==========
-    ShadowMapClass* m_ShadowMap = nullptr;
+    std::unique_ptr<ShadowMapClass> m_ShadowMap;
 
     // ========== Light ==========
-    LightClass* m_Light = nullptr;
+    std::unique_ptr<LightClass> m_Light;
 
     // ========== UI ==========
-    BitmapClass* m_Bitmap = nullptr;
-    TextClass* m_Text = nullptr;
+    std::unique_ptr<BitmapClass> m_Bitmap;
+    std::unique_ptr<TextClass> m_Text;
     Skybox m_sky;
 
     // ========== Screen ==========

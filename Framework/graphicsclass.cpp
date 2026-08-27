@@ -17,7 +17,6 @@ extern D3DClass* g_D3D;
 using namespace DirectX;
 
 GraphicsClass::GraphicsClass() {}
-GraphicsClass::GraphicsClass(const GraphicsClass& other) {}
 GraphicsClass::~GraphicsClass() {}
 
 bool GraphicsClass::Initialize(int screenWidth, int screenHeight, HWND hwnd)
@@ -28,8 +27,8 @@ bool GraphicsClass::Initialize(int screenWidth, int screenHeight, HWND hwnd)
     m_screenWidth = screenWidth;
     m_screenHeight = screenHeight;
 
-    // ========== D3D ==========
-    m_D3D = new D3DClass;
+    // ========== D3D (Smart Pointer RAII) ==========
+    m_D3D = std::make_unique<D3DClass>();
     if (!m_D3D) return false;
 
     result = m_D3D->Initialize(screenWidth, screenHeight, VSYNC_ENABLED,
@@ -38,33 +37,33 @@ bool GraphicsClass::Initialize(int screenWidth, int screenHeight, HWND hwnd)
         MessageBox(hwnd, L"Could not initialize Direct3D.", L"Error", MB_OK);
         return false;
     }
-    g_D3D = m_D3D;
+    g_D3D = m_D3D.get();
 
-    // ========== Camera ==========
-    m_Camera = new CameraClass;
+    // ========== Camera (Smart Pointer RAII) ==========
+    m_Camera = std::make_unique<CameraClass>();
     if (!m_Camera) return false;
 
     m_Camera->SetPosition(0.0f, 1.7f, -5.0f);
     m_Camera->SetRotation(0.0f, 0.0f, 0.0f);
 
     // ========== Player Controller ==========
-    m_playerController.Initialize(m_Camera);
+    m_playerController.Initialize(m_Camera.get());
 
     // ========== Shadow Mapping (실시간 그림자) ==========
-    m_ShadowMap = new ShadowMapClass;
+    m_ShadowMap = std::make_unique<ShadowMapClass>();
     if (!m_ShadowMap || !m_ShadowMap->Initialize(m_D3D->GetDevice(), 2048, 2048)) {
         MessageBox(hwnd, L"Could not initialize Shadow Map.", L"Error", MB_OK);
         return false;
     }
 
-    m_DepthShader = new DepthShaderClass;
+    m_DepthShader = std::make_unique<DepthShaderClass>();
     if (!m_DepthShader || !m_DepthShader->Initialize(m_D3D->GetDevice(), hwnd)) {
         MessageBox(hwnd, L"Could not initialize Depth Shader.", L"Error", MB_OK);
         return false;
     }
 
-    // ========== Shaders ==========
-    m_MultiTexShader = new MultiTextureShaderClass;
+    // ========== Shaders (Smart Pointer RAII) ==========
+    m_MultiTexShader = std::make_unique<MultiTextureShaderClass>();
     if (!m_MultiTexShader ||
         !m_MultiTexShader->Initialize(m_D3D->GetDevice(), hwnd,
             L"./data/MultiTextureShader.hlsl")) {
@@ -72,19 +71,19 @@ bool GraphicsClass::Initialize(int screenWidth, int screenHeight, HWND hwnd)
         return false;
     }
 
-    m_TextureShader = new TextureShaderClass;
+    m_TextureShader = std::make_unique<TextureShaderClass>();
     if (!m_TextureShader || !m_TextureShader->Initialize(m_D3D->GetDevice(), hwnd)) {
         MessageBox(hwnd, L"Could not initialize texture shader.", L"Error", MB_OK);
         return false;
     }
 
-    m_LightShader = new LightShaderClass;
+    m_LightShader = std::make_unique<LightShaderClass>();
     if (!m_LightShader || !m_LightShader->Initialize(m_D3D->GetDevice(), hwnd)) {
         MessageBox(hwnd, L"Could not initialize the light shader object.", L"Error", MB_OK);
         return false;
     }
 
-    m_SkinShader = new SkinShaderClass;
+    m_SkinShader = std::make_unique<SkinShaderClass>();
     if (!m_SkinShader || !m_SkinShader->Initialize(m_D3D->GetDevice(), hwnd)) {
         MessageBox(hwnd, L"Could not initialize skin shader.", L"Error", MB_OK);
         return false;
@@ -109,7 +108,7 @@ bool GraphicsClass::Initialize(int screenWidth, int screenHeight, HWND hwnd)
     }
 
     // ========== UI ==========
-    m_Bitmap = new BitmapClass;
+    m_Bitmap = std::make_unique<BitmapClass>();
     if (!m_Bitmap) return false;
 
     result = m_Bitmap->Initialize(m_D3D->GetDevice(), screenWidth, screenHeight,
@@ -122,7 +121,7 @@ bool GraphicsClass::Initialize(int screenWidth, int screenHeight, HWND hwnd)
     m_Camera->Render();
     m_Camera->GetViewMatrix(baseViewMatrix);
 
-    m_Text = new TextClass;
+    m_Text = std::make_unique<TextClass>();
     if (!m_Text) return false;
 
     result = m_Text->Initialize(m_D3D->GetDevice(), m_D3D->GetDeviceContext(),
@@ -138,7 +137,7 @@ bool GraphicsClass::Initialize(int screenWidth, int screenHeight, HWND hwnd)
         return false;
 
     // ========== Light ==========
-    m_Light = new LightClass;
+    m_Light = std::make_unique<LightClass>();
     if (!m_Light) return false;
 
     m_Light->SetAmbientColor(0.25f, 0.25f, 0.25f, 1.0f);
@@ -148,7 +147,7 @@ bool GraphicsClass::Initialize(int screenWidth, int screenHeight, HWND hwnd)
     m_Light->SetSpecularPower(16.0f);
 
     // ========== Light Manager ==========
-    m_lightManager.Initialize(m_Light);
+    m_lightManager.Initialize(m_Light.get());
 
     // ========== Dear ImGui 초기화 ==========
     if (!InitImGui(hwnd))
@@ -170,25 +169,26 @@ void GraphicsClass::Shutdown()
 
     m_particleSystem.Shutdown();
 
-    if (m_DepthShader) { m_DepthShader->Shutdown(); delete m_DepthShader; m_DepthShader = nullptr; }
-    if (m_ShadowMap) { m_ShadowMap->Shutdown(); delete m_ShadowMap; m_ShadowMap = nullptr; }
+    if (m_DepthShader) { m_DepthShader->Shutdown(); m_DepthShader.reset(); }
+    if (m_ShadowMap) { m_ShadowMap->Shutdown(); m_ShadowMap.reset(); }
 
     m_sceneManager.Shutdown();
 
     m_sky.Release();
 
-    if (m_Text) { m_Text->Shutdown(); delete m_Text; m_Text = nullptr; }
-    if (m_Bitmap) { m_Bitmap->Shutdown(); delete m_Bitmap; m_Bitmap = nullptr; }
+    if (m_Text) { m_Text->Shutdown(); m_Text.reset(); }
+    if (m_Bitmap) { m_Bitmap->Shutdown(); m_Bitmap.reset(); }
 
-    if (m_TextureShader) { m_TextureShader->Shutdown(); delete m_TextureShader; m_TextureShader = nullptr; }
-    if (m_MultiTexShader) { m_MultiTexShader->Shutdown(); delete m_MultiTexShader; m_MultiTexShader = nullptr; }
+    if (m_TextureShader) { m_TextureShader->Shutdown(); m_TextureShader.reset(); }
+    if (m_MultiTexShader) { m_MultiTexShader->Shutdown(); m_MultiTexShader.reset(); }
 
-    if (m_Light) { delete m_Light; m_Light = nullptr; }
-    if (m_LightShader) { m_LightShader->Shutdown(); delete m_LightShader; m_LightShader = nullptr; }
-    if (m_SkinShader) { m_SkinShader->Shutdown(); delete m_SkinShader; m_SkinShader = nullptr; }
+    m_Light.reset();
+    if (m_LightShader) { m_LightShader->Shutdown(); m_LightShader.reset(); }
+    if (m_SkinShader) { m_SkinShader->Shutdown(); m_SkinShader.reset(); }
 
-    if (m_Camera) { delete m_Camera; m_Camera = nullptr; }
-    if (m_D3D) { m_D3D->Shutdown(); delete m_D3D; m_D3D = nullptr; }
+    m_Camera.reset();
+    g_D3D = nullptr;
+    if (m_D3D) { m_D3D->Shutdown(); m_D3D.reset(); }
 }
 
 //////////////////////////////////////////////////////////////////
@@ -736,7 +736,7 @@ bool GraphicsClass::Render()
 
         farmGirl->RenderSkinned(
             m_D3D->GetDeviceContext(),
-            m_SkinShader,
+            m_SkinShader.get(),
             girlWorld, viewMatrix, projectionMatrix,
             m_sceneManager.GetFarmGirlTexture()
         );
