@@ -998,10 +998,10 @@ void GraphicsClass::RenderImGui()
                 }
 
                 ImGui::Separator();
-                ImGui::TextDisabled(u8"[개별 동물 상태]");
+                ImGui::TextDisabled(u8"[개별 동물 실시간 상태 (FSM)]");
                 for (const auto& a : m_questSystem.GetAnimals())
                 {
-                    ImGui::BulletText("%s: %s", a.name.c_str(), a.isFed ? u8"[완료] 행복함 (Fed)" : u8"[대기] 배고픔 (Hungry)");
+                    ImGui::BulletText("%s: %s", a.name.c_str(), a.GetStateName());
                 }
                 ImGui::Separator();
             }

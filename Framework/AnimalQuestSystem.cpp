@@ -29,10 +29,7 @@ void AnimalQuestSystem::Initialize()
     horse.basePos = XMFLOAT3(5.0f, 0.0f, 15.0f);
     horse.currentPos = horse.basePos;
     horse.collisionRadius = 2.0f;
-    horse.isFed = false;
-    horse.hopTimer = 0.0f;
-    horse.hopOffset = 0.0f;
-    horse.rotationOffset = 0.0f;
+    horse.ChangeState(std::make_shared<HungryState>());
     m_animals.push_back(horse);
 
     // 2. 돼지 (Pig - FBX Index 3)
@@ -43,10 +40,7 @@ void AnimalQuestSystem::Initialize()
     pig.basePos = XMFLOAT3(-4.0f, 0.0f, 8.0f);
     pig.currentPos = pig.basePos;
     pig.collisionRadius = 1.6f;
-    pig.isFed = false;
-    pig.hopTimer = 0.0f;
-    pig.hopOffset = 0.0f;
-    pig.rotationOffset = 0.0f;
+    pig.ChangeState(std::make_shared<HungryState>());
     m_animals.push_back(pig);
 
     // 3. 닭 (Chicken - FBX Index 4)
@@ -57,10 +51,7 @@ void AnimalQuestSystem::Initialize()
     chicken.basePos = XMFLOAT3(3.0f, 0.0f, 6.0f);
     chicken.currentPos = chicken.basePos;
     chicken.collisionRadius = 1.0f;
-    chicken.isFed = false;
-    chicken.hopTimer = 0.0f;
-    chicken.hopOffset = 0.0f;
-    chicken.rotationOffset = 0.0f;
+    chicken.ChangeState(std::make_shared<HungryState>());
     m_animals.push_back(chicken);
 
     // 4. 염소 (Goat - FBX Index 5)
@@ -71,10 +62,7 @@ void AnimalQuestSystem::Initialize()
     goat.basePos = XMFLOAT3(0.0f, 0.2f, 10.0f);
     goat.currentPos = goat.basePos;
     goat.collisionRadius = 1.3f;
-    goat.isFed = false;
-    goat.hopTimer = 0.0f;
-    goat.hopOffset = 0.0f;
-    goat.rotationOffset = 0.0f;
+    goat.ChangeState(std::make_shared<HungryState>());
     m_animals.push_back(goat);
 
     // 상태 초기화 (총 4마리: 말, 돼지, 닭, 염소)
@@ -99,26 +87,10 @@ void AnimalQuestSystem::Update(float dt, const DirectX::XMFLOAT3& playerPos, std
         }
     }
 
-    // 2. 동물들의 뜀뛰기(Hop) 및 축하 반응 애니메이션 업데이트
+    // 2. [상태 패턴] 동물들의 상태 머신(FSM) 및 애니메이션 모션 업데이트
     for (auto& a : m_animals)
     {
-        if (a.hopTimer > 0.0f)
-        {
-            a.hopTimer -= dt;
-            if (a.hopTimer < 0.0f) a.hopTimer = 0.0f;
-
-            // 통통 튀는 바운스 모션 (Sine wave)
-            float bounce = fabsf(sinf(a.hopTimer * 10.0f)) * 0.6f;
-            a.hopOffset = bounce;
-            a.currentPos.y = a.basePos.y + bounce;
-            a.rotationOffset = sinf(a.hopTimer * 12.0f) * 0.15f;
-        }
-        else
-        {
-            a.hopOffset = 0.0f;
-            a.currentPos.y = a.basePos.y;
-            a.rotationOffset = 0.0f;
-        }
+        a.UpdateState(dt);
     }
 
     // 3. 건초 발사체와 동물 충돌 검사
@@ -129,7 +101,8 @@ void AnimalQuestSystem::Update(float dt, const DirectX::XMFLOAT3& playerPos, std
 
         for (auto& a : m_animals)
         {
-            if (a.isFed) continue; // 이미 먹은 동물은 패스
+            // 현재 상태에서 먹이를 먹을 수 없는 경우(이미 포만/뜀뛰기 상태) 패스
+            if (!a.CanEat()) continue;
 
             float dx = pr.pos.x - a.basePos.x;
             float dy = pr.pos.y - (a.basePos.y + 0.5f);
@@ -138,9 +111,8 @@ void AnimalQuestSystem::Update(float dt, const DirectX::XMFLOAT3& playerPos, std
 
             if (distSq < (a.collisionRadius * a.collisionRadius))
             {
-                // 먹이 적중!
-                a.isFed = true;
-                a.hopTimer = 2.0f; // 2초간 신나게 뜀뛰기
+                // [상태 패턴] 먹이 적중: 신나게 뜀뛰기 상태(HappyHopState)로 전이
+                a.ChangeState(std::make_shared<HappyHopState>(2.0f));
                 m_fedCount++;
                 projHit = true;
 
@@ -161,10 +133,10 @@ void AnimalQuestSystem::Update(float dt, const DirectX::XMFLOAT3& playerPos, std
     if (m_fedCount >= (int)m_animals.size() && !m_isCompleted)
     {
         m_isCompleted = true;
-        // 미션 완료 시 모든 동물이 일제히 축하 뜀뛰기
+        // [상태 패턴] 미션 완료 시 모든 동물이 일제히 축하 뜀뛰기 상태로 전이
         for (auto& a : m_animals)
         {
-            a.hopTimer = 3.5f;
+            a.ChangeState(std::make_shared<HappyHopState>(3.5f));
         }
     }
 }
@@ -178,7 +150,8 @@ bool AnimalQuestSystem::TryFeedNearAnimal(const DirectX::XMFLOAT3& playerPos, st
 
     for (auto& a : m_animals)
     {
-        if (a.isFed) continue;
+        // 현재 상태에서 먹이를 먹을 수 없는 경우(이미 포만/뜀뛰기 상태) 패스
+        if (!a.CanEat()) continue;
 
         float dx = playerPos.x - a.basePos.x;
         float dy = playerPos.y - a.basePos.y;
@@ -188,8 +161,8 @@ bool AnimalQuestSystem::TryFeedNearAnimal(const DirectX::XMFLOAT3& playerPos, st
         if (distSq < (FEED_INTERACT_RADIUS * FEED_INTERACT_RADIUS))
         {
             m_ammoCount--;
-            a.isFed = true;
-            a.hopTimer = 2.5f;
+            // [상태 패턴] 직접 먹이기 성공: 신나게 뜀뛰기 상태(HappyHopState)로 전이
+            a.ChangeState(std::make_shared<HappyHopState>(2.5f));
             m_fedCount++;
             outFedAnimalName = a.name;
 
@@ -198,7 +171,7 @@ bool AnimalQuestSystem::TryFeedNearAnimal(const DirectX::XMFLOAT3& playerPos, st
                 m_isCompleted = true;
                 for (auto& other : m_animals)
                 {
-                    other.hopTimer = 3.5f;
+                    other.ChangeState(std::make_shared<HappyHopState>(3.5f));
                 }
             }
 
@@ -248,11 +221,8 @@ void AnimalQuestSystem::ResetQuest()
 {
     for (auto& a : m_animals)
     {
-        a.isFed = false;
-        a.hopTimer = 0.0f;
-        a.hopOffset = 0.0f;
-        a.rotationOffset = 0.0f;
-        a.currentPos = a.basePos;
+        // [상태 패턴] 배고픔 상태(HungryState)로 초기화
+        a.ChangeState(std::make_shared<HungryState>());
     }
 
     m_fedCount = 0;
@@ -281,7 +251,8 @@ bool AnimalQuestSystem::GetNearestAnimalPrompt(const DirectX::XMFLOAT3& playerPo
 
     for (const auto& a : m_animals)
     {
-        if (a.isFed) continue;
+        // 이미 배부르거나 먹이를 먹을 수 없는 상태면 프롬프트에서 제외
+        if (!a.CanEat()) continue;
 
         float dx = playerPos.x - a.basePos.x;
         float dy = playerPos.y - a.basePos.y;

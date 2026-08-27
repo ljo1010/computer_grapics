@@ -8,22 +8,40 @@
 #include <string>
 #include <DirectXMath.h>
 #include "ProjectileSystem.h"
+#include "AnimalState.h"
 
-// 동물 종류 및 상태 구조체
+// 동물 종류 및 상태 구조체 (State Pattern 적용)
 struct AnimalTarget
 {
     enum Type { HORSE, PIG, CHICKEN, GOAT };
 
     Type type;
-    std::string name;       // 동물 이름 (말, 돼지, 닭, 염소)
-    size_t fbxIndex;        // FBX 씬 인덱스 (Horse: 2, Pig: 3, Chicken: 4, Goat: 5)
+    std::string name;             // 동물 이름 (말, 돼지, 닭, 염소)
+    size_t fbxIndex;              // FBX 씬 인덱스 (Horse: 2, Pig: 3, Chicken: 4, Goat: 5)
     DirectX::XMFLOAT3 basePos;    // 원본 위치
-    DirectX::XMFLOAT3 currentPos; // 뜀뛰기 애니메이션이 반영된 실시간 위치
-    float collisionRadius;  // 건초 피격 및 인터랙션 반경
-    bool isFed;             // 먹이를 먹었는지 여부 (true: 행복, false: 배고픔)
-    float hopTimer;         // 먹이 먹었을 때 신나게 뛰는 타이머
-    float hopOffset;        // Y축 점프 높이
-    float rotationOffset;   // 회전 각도 (뜀뛰기 시 좌우 흔들림)
+    DirectX::XMFLOAT3 currentPos; // 실시간 위치 (상태에 따른 호흡/뜀뛰기 모션 반영)
+    float collisionRadius;        // 건초 피격 및 인터랙션 반경
+    float hopOffset = 0.0f;       // Y축 점프 높이
+    float rotationOffset = 0.0f;  // 회전 각도 (좌우 흔들림)
+
+    // 상태 머신 (FSM)
+    std::shared_ptr<IAnimalState> state;
+
+    void ChangeState(std::shared_ptr<IAnimalState> newState)
+    {
+        if (state) state->Exit(*this);
+        state = newState;
+        if (state) state->Enter(*this);
+    }
+
+    void UpdateState(float dt)
+    {
+        if (state) state->Update(*this, dt);
+    }
+
+    bool CanEat() const { return state ? state->CanEat() : false; }
+    bool IsFed() const { return state ? state->IsFed() : false; }
+    const char* GetStateName() const { return state ? state->GetStateName() : "None"; }
 };
 
 class AnimalQuestSystem

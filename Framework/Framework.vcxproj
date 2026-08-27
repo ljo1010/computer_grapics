@@ -179,6 +179,7 @@
     <ClCompile Include="ShadowMapClass.cpp" />
     <ClCompile Include="DepthShaderClass.cpp" />
     <ClCompile Include="AnimalQuestSystem.cpp" />
+    <ClCompile Include="AnimalState.cpp" />
     <ClCompile Include="ParticleSystem.cpp" />
     <ClCompile Include="SkinModel.cpp" />
     <ClCompile Include="SkinShaderClass.cpp" />
@@ -228,6 +229,7 @@
     <ClInclude Include="PlayerController.h" />
     <ClInclude Include="ProjectileSystem.h" />
     <ClInclude Include="AnimalQuestSystem.h" />
+    <ClInclude Include="AnimalState.h" />
     <ClInclude Include="ParticleSystem.h" />
     <ClInclude Include="Event.h" />
     <ClInclude Include="EventBus.h" />
