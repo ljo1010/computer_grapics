@@ -63,8 +63,10 @@ public:
     size_t GetTreeIndex() const { return m_treeIndex; }
     size_t GetFarmerIndex() const { return 0; }
 
-    // ========== Fence Colliders ==========
+    // ========== Fence Colliders & Instancing Positions ==========
     const std::vector<FenceCollider>& GetFenceColliders() const { return m_fenceColliders; }
+    const std::vector<DirectX::XMFLOAT3>& GetTreePositions() const { return m_treePositions; }
+    const std::vector<DirectX::XMFLOAT3>& GetFencePositions() const { return m_fencePositions; }
 
 private:
     bool LoadFbxModels(ID3D11Device* device, HWND hwnd);
@@ -110,6 +112,8 @@ private:
     size_t m_fenceIndex = 8;
     size_t m_treeIndex = 10;
 
-    // ========== Collision ==========
+    // ========== Collision & Instancing ==========
     std::vector<FenceCollider> m_fenceColliders;
+    std::vector<DirectX::XMFLOAT3> m_treePositions;
+    std::vector<DirectX::XMFLOAT3> m_fencePositions;
 };

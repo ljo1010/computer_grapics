@@ -281,6 +281,7 @@ void SceneManager::SetupInstancing(ID3D11Device* device)
 
         FbxModelClass* fenceModel = m_fbxModels[m_fenceIndex];
         fenceModel->InitializeInstanceBuffer(device, fencePositions);
+        m_fencePositions = fencePositions;
 
         // Setup fence colliders
         m_fenceColliders.clear();
@@ -326,6 +327,7 @@ void SceneManager::SetupInstancing(ID3D11Device* device)
 
         FbxModelClass* treeModel = m_fbxModels[m_treeIndex];
         treeModel->InitializeInstanceBuffer(device, treePositions);
+        m_treePositions = treePositions;
     }
 }
 

@@ -441,6 +441,36 @@ void GraphicsClass::ExecuteShadowPass()
         }
     }
 
+    // 5. 인스턴싱 나무(Tree) 모델들의 섀도우 맵 Depth 렌더링
+    if (treeIndex < m_sceneManager.GetFbxCount())
+    {
+        FbxModelClass* treeModel = m_sceneManager.GetFbxModel(treeIndex);
+        if (treeModel)
+        {
+            treeModel->Render(m_D3D->GetDeviceContext());
+            for (const auto& pos : m_sceneManager.GetTreePositions())
+            {
+                XMMATRIX world = XMMatrixTranslation(pos.x, pos.y, pos.z);
+                m_DepthShader->Render(m_D3D->GetDeviceContext(), treeModel->GetIndexCount(), world, lightViewMatrix, lightProjectionMatrix);
+            }
+        }
+    }
+
+    // 6. 인스턴싱 울타리(Fence) 모델들의 섀도우 맵 Depth 렌더링
+    if (fenceIndex < m_sceneManager.GetFbxCount())
+    {
+        FbxModelClass* fenceModel = m_sceneManager.GetFbxModel(fenceIndex);
+        if (fenceModel)
+        {
+            fenceModel->Render(m_D3D->GetDeviceContext());
+            for (const auto& pos : m_sceneManager.GetFencePositions())
+            {
+                XMMATRIX world = XMMatrixTranslation(pos.x, pos.y, pos.z);
+                m_DepthShader->Render(m_D3D->GetDeviceContext(), fenceModel->GetIndexCount(), world, lightViewMatrix, lightProjectionMatrix);
+            }
+        }
+    }
+
     // 섀도우 패스 완료 후 OM 깊이 버퍼 언바인드
     ID3D11RenderTargetView* nullRTV = nullptr;
     m_D3D->GetDeviceContext()->OMSetRenderTargets(1, &nullRTV, nullptr);
