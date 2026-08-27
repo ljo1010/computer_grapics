@@ -165,32 +165,73 @@ bool SoundManager::LoadWaveFile(const char* filename, IDirectSoundBuffer8** seco
     fopen_s(&filePtr, filename, "rb");
     if (!filePtr) return false;
 
-    WaveHeaderType waveFileHeader;
-    size_t count = fread(&waveFileHeader, sizeof(waveFileHeader), 1, filePtr);
-    if (count != 1) { fclose(filePtr); return false; }
+    char riffTag[4];
+    if (fread(riffTag, 1, 4, filePtr) != 4 || memcmp(riffTag, "RIFF", 4) != 0)
+    {
+        fclose(filePtr);
+        return false;
+    }
 
-    // RIFF 및 WAVE 헤더 검사
-    if ((waveFileHeader.chunkId[0] != 'R') || (waveFileHeader.chunkId[1] != 'I') ||
-        (waveFileHeader.chunkId[2] != 'F') || (waveFileHeader.chunkId[3] != 'F') ||
-        (waveFileHeader.format[0] != 'W') || (waveFileHeader.format[1] != 'A') ||
-        (waveFileHeader.format[2] != 'V') || (waveFileHeader.format[3] != 'E'))
+    unsigned long fileSize = 0;
+    fread(&fileSize, 4, 1, filePtr);
+
+    char waveTag[4];
+    if (fread(waveTag, 1, 4, filePtr) != 4 || memcmp(waveTag, "WAVE", 4) != 0)
     {
         fclose(filePtr);
         return false;
     }
 
     WAVEFORMATEX waveFormat{};
-    waveFormat.wFormatTag = WAVE_FORMAT_PCM;
-    waveFormat.nSamplesPerSec = waveFileHeader.sampleRate;
-    waveFormat.wBitsPerSample = waveFileHeader.bitsPerSample;
-    waveFormat.nChannels = waveFileHeader.numChannels;
-    waveFormat.nBlockAlign = (waveFormat.wBitsPerSample / 8) * waveFormat.nChannels;
-    waveFormat.nAvgBytesPerSec = waveFormat.nSamplesPerSec * waveFormat.nBlockAlign;
+    bool fmtFound = false;
+    unsigned long dataSize = 0;
+    long dataPos = 0;
+
+    // RIFF 청크 동적 탐색 (fmt 청크 및 data 청크 정확히 분리)
+    char chunkId[4];
+    unsigned long chunkSize = 0;
+    while (fread(chunkId, 1, 4, filePtr) == 4 && fread(&chunkSize, 4, 1, filePtr) == 1)
+    {
+        if (memcmp(chunkId, "fmt ", 4) == 0)
+        {
+            unsigned short formatTag = 0;
+            fread(&formatTag, 2, 1, filePtr);
+            fread(&waveFormat.nChannels, 2, 1, filePtr);
+            fread(&waveFormat.nSamplesPerSec, 4, 1, filePtr);
+            fread(&waveFormat.nAvgBytesPerSec, 4, 1, filePtr);
+            fread(&waveFormat.nBlockAlign, 2, 1, filePtr);
+            fread(&waveFormat.wBitsPerSample, 2, 1, filePtr);
+            waveFormat.wFormatTag = formatTag;
+
+            if (chunkSize > 16)
+            {
+                fseek(filePtr, chunkSize - 16, SEEK_CUR);
+            }
+            fmtFound = true;
+        }
+        else if (memcmp(chunkId, "data", 4) == 0)
+        {
+            dataSize = chunkSize;
+            dataPos = ftell(filePtr);
+            break;
+        }
+        else
+        {
+            // LIST, JUNK 등 메타데이터 청크 안전하게 건너뛰기
+            fseek(filePtr, chunkSize, SEEK_CUR);
+        }
+    }
+
+    if (!fmtFound || dataSize == 0)
+    {
+        fclose(filePtr);
+        return false;
+    }
 
     DSBUFFERDESC bufferDesc{};
     bufferDesc.dwSize = sizeof(DSBUFFERDESC);
     bufferDesc.dwFlags = DSBCAPS_CTRLVOLUME | DSBCAPS_GLOBALFOCUS;
-    bufferDesc.dwBufferBytes = waveFileHeader.dataSize;
+    bufferDesc.dwBufferBytes = dataSize;
     bufferDesc.lpwfxFormat = &waveFormat;
 
     IDirectSoundBuffer* tempBuffer = nullptr;
@@ -201,17 +242,17 @@ bool SoundManager::LoadWaveFile(const char* filename, IDirectSoundBuffer8** seco
     tempBuffer->Release();
     if (FAILED(hr)) { fclose(filePtr); return false; }
 
-    unsigned char* waveData = new unsigned char[waveFileHeader.dataSize];
-    fseek(filePtr, sizeof(WaveHeaderType), SEEK_SET);
-    fread(waveData, 1, waveFileHeader.dataSize, filePtr);
+    unsigned char* waveData = new unsigned char[dataSize];
+    fseek(filePtr, dataPos, SEEK_SET);
+    fread(waveData, 1, dataSize, filePtr);
     fclose(filePtr);
 
     unsigned char* bufferPtr = nullptr;
     unsigned long bufferSize = 0;
-    hr = (*secondaryBuffer)->Lock(0, waveFileHeader.dataSize, (void**)&bufferPtr, (DWORD*)&bufferSize, NULL, 0, 0);
+    hr = (*secondaryBuffer)->Lock(0, dataSize, (void**)&bufferPtr, (DWORD*)&bufferSize, NULL, 0, 0);
     if (FAILED(hr)) { delete[] waveData; return false; }
 
-    memcpy(bufferPtr, waveData, waveFileHeader.dataSize);
+    memcpy(bufferPtr, waveData, dataSize);
     (*secondaryBuffer)->Unlock((void*)bufferPtr, bufferSize, NULL, 0);
 
     delete[] waveData;
