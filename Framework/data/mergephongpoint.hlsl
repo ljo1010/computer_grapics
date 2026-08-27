@@ -148,9 +148,10 @@ void AccumulatePointLight(
 
     float smoothness = 1.0f - roughness;
     float shininess = lerp(8.0f, 64.0f, smoothness);
-    float3 specBase = lerp(specularColor.rgb, lColor.rgb, metallic);
+    float3 specF0 = lerp(float3(0.06f, 0.06f, 0.06f), lColor.rgb, metallic);
+    float3 specBase = specularColor.rgb * specF0;
 
-    float3 spec = specBase * pow(NdotH, shininess) * att * pointIntensityScale;
+    float3 spec = specBase * pow(NdotH, shininess) * att * pointIntensityScale * 1.5f;
 
     diffAcc += diffuse;
     specAcc += spec;
@@ -207,10 +208,12 @@ float4 LightPixelShader(PixelInputType input) : SV_TARGET
 {
     float4 albedo = AlbedoMap.Sample(SampleType, input.tex);
 
-    float metallic = MetallicMap.Sample(SampleType, input.tex).r;
-    float roughness = RoughnessMap.Sample(SampleType, input.tex).r;
-    roughness = saturate(roughness);
-    metallic = saturate(metallic);
+    // Roughness/Metallic 맵이 별도로 언바운드(0)일 경우 번쩍임을 방지하고 자연스러운 반광(Matte/Satin) 기본값 유지
+    float rawRoughness = RoughnessMap.Sample(SampleType, input.tex).r;
+    float rawMetallic = MetallicMap.Sample(SampleType, input.tex).r;
+
+    float roughness = (rawRoughness > 0.001f) ? saturate(rawRoughness) : 0.72f;
+    float metallic = saturate(rawMetallic);
 
     float3 N = normalize(input.normal);
     float3 V = normalize(input.viewDir);
@@ -240,9 +243,12 @@ float4 LightPixelShader(PixelInputType input) : SV_TARGET
 
         float smoothness = 1.0f - roughness;
         float shininess = lerp(8.0f, 64.0f, smoothness);
-        float3 specBase = lerp(specularColor.rgb, albedo.rgb, metallic);
 
-        specAccum += specBase * pow(NdotH, shininess) * shadow;
+        // 비금속 물체의 기본 프레넬 반사율은 4%~8% 수준이며, 금속일 때만 알베도 색상을 띰
+        float3 specF0 = lerp(float3(0.06f, 0.06f, 0.06f), albedo.rgb, metallic);
+        float3 specBase = specularColor.rgb * specF0;
+
+        specAccum += specBase * pow(NdotH, shininess) * shadow * 1.5f;
     }
 
     float3 pDiff = 0;

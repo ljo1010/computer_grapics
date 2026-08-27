@@ -157,8 +157,8 @@ bool GraphicsClass::Initialize(int screenWidth, int screenHeight, HWND hwnd)
     m_Light->SetAmbientColor(0.25f, 0.25f, 0.25f, 1.0f);
     m_Light->SetDiffuseColor(1.0f, 1.0f, 1.0f, 1.0f);
     m_Light->SetDirection(0.5f, -1.0f, 0.5f); // 위에서 아래로 비추는 자연스러운 태양광 방향
-    m_Light->SetSpecularColor(1.0f, 1.0f, 1.0f, 1.0f);
-    m_Light->SetSpecularPower(16.0f);
+    m_Light->SetSpecularColor(0.25f, 0.25f, 0.25f, 1.0f);
+    m_Light->SetSpecularPower(32.0f);
 
     // ========== Light Manager ==========
     m_lightManager.Initialize(m_Light.get());
