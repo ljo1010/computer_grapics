@@ -146,12 +146,9 @@ float4 CompositePS(VS_OUTPUT input) : SV_TARGET
     {
         float2 uv = input.texcoord - float2(0.5f, 0.5f);
         float dist = length(uv);
-        float vig = smoothstep(0.8f, 0.2f, dist * vignetteIntensity * 1.6f);
+        float vig = smoothstep(0.8f, 0.2f, dist * vignetteIntensity * 1.5f);
         sceneColor *= vig;
     }
-
-    // 5. sRGB 감마 보정 (Linear -> Gamma 2.2)
-    sceneColor = pow(max(0.0f, sceneColor), 1.0f / 2.2f);
 
     return float4(sceneColor, 1.0f);
 }

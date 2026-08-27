@@ -140,8 +140,8 @@ private:
 
     // Distance Fog (거리 기반 대기 안개)
     DirectX::XMFLOAT4 m_fogColor = DirectX::XMFLOAT4(0.72f, 0.76f, 0.85f, 1.0f); // 하늘색 조화 대기 안개
-    float m_fogStart = 15.0f;     // 안개 시작 거리 (15m부터 서서히 안개 시작)
-    float m_fogEnd = 75.0f;       // 안개 최대 거리 (75m에서 완전히 대기 안개에 융합)
+    float m_fogStart = 45.0f;     // 안개 시작 거리 (농장 마당 45m 내부는 쨍하고 선명하게 유지)
+    float m_fogEnd = 135.0f;      // 안개 최대 거리 (135m 원경에서 대기 안개에 융합)
     bool m_fogEnabled = true;     // 안개 기본 ON
 
     // Point Lights

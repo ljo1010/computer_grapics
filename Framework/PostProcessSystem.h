@@ -92,9 +92,9 @@ private:
 
     // 제어 파라미터 기본값
     bool  m_enableBloom = true;
-    float m_bloomThreshold = 0.82f;
-    float m_bloomIntensity = 0.65f;
-    bool  m_enableTonemap = true;
-    float m_vignetteIntensity = 0.32f;
-    float m_exposure = 1.05f;
+    float m_bloomThreshold = 0.88f;
+    float m_bloomIntensity = 0.45f;
+    bool  m_enableTonemap = false; // 기본은 기존의 쨍한 색감 유지
+    float m_vignetteIntensity = 0.20f;
+    float m_exposure = 1.0f;
 };
