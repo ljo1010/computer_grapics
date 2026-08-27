@@ -55,6 +55,10 @@ DirectX 11 및 C++ 기반으로 제작된 실시간 3D 그래픽스 및 게임�
    - 1인칭 FPS 조작 모드 시 마우스 클릭 100% 투과(Pass-through) 처리로 조작 간섭 제거
    - [Tab] 또는 [F1] 키로 마우스 커서를 해제하고 ImGui 디버그 패널에서 모든 그래픽/조명 파라미터 실시간 제어
 
+4. 옵저버 패턴 및 이벤트 버스 (Observer Pattern / Event-Driven Architecture)
+   - 게임플레이(퀘스트) 시스템과 그래픽스(파티클 시스템) 간의 직접적인 참조 및 의존성을 완전히 제거(Decoupling)
+   - 타입 세이프(Type-Safe) 제네릭 이벤트 버스(`EventBus`)를 구축하여 발행(Publish)/구독(Subscribe) 모델로 시스템 간 결합도 완화 및 단일 책임 원칙(SRP) 준수
+
 ---
 
 ## 2. 핵심 소스 코드 가이드 (중점적으로 보아야 할 파일)
@@ -92,8 +96,11 @@ DirectX 11 및 C++ 기반으로 제작된 실시간 3D 그래픽스 및 게임�
 ---
 
 ### [게임플레이 및 시스템 관리자]
+- Framework/Event.h / EventBus.h
+  - 타입 세이프 제네릭 이벤트 버스 및 게임 내 이벤트 구조체(AnimalFedEvent, QuestResetEvent, HayImpactEvent)가 정의된 옵저버 패턴의 핵심 아키텍처입니다.
+
 - Framework/AnimalQuestSystem.h / .cpp
-  - 4마리 동물(말, 돼지, 닭, 염소)의 상태 관리, 건초 충돌 판정, 절차적 뜀뛰기 모션, 탄약 획득 및 리스폰을 담당하는 핵심 퀘스트 클래스입니다.
+  - 4마리 동물(말, 돼지, 닭, 염소)의 상태 관리, 건초 충돌 판정, 절차적 뜀뛰기 모션, 탄약 획득 및 리스폰을 담당하는 핵심 퀘스트 클래스입니다. (이벤트 발행 주체)
 
 - Framework/LightManager.h / .cpp
   - 태양의 3차원 자전 궤도(UpdateSunOrbit), 광원 뷰/투영 행렬 생성, 그림자 파라미터, 대기 안개 속성(Fog Color, Start, End)을 총괄 관리하는 클래스입니다.

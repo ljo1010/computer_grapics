@@ -228,7 +228,7 @@ bool GraphicsClass::Frame(int mouseDX, int mouseDY)
     if (currEKeyDown && !prevEKeyDown)
     {
         std::string fedAnimalName;
-        m_questSystem.TryFeedNearAnimal(camPos, fedAnimalName, &m_particleSystem);
+        m_questSystem.TryFeedNearAnimal(camPos, fedAnimalName);
     }
     prevEKeyDown = currEKeyDown;
 
@@ -238,7 +238,6 @@ bool GraphicsClass::Frame(int mouseDX, int mouseDY)
     if (currRKeyDown && !prevRKeyDown)
     {
         m_questSystem.ResetQuest();
-        m_particleSystem.Clear();
     }
     prevRKeyDown = currRKeyDown;
 
@@ -260,7 +259,7 @@ bool GraphicsClass::Frame(int mouseDX, int mouseDY)
 
     // 5. 투사체 이동 및 퀘스트(동물 피격) 업데이트
     m_projectileSystem.UpdateMotionOnly(1.0f / 60.0f);
-    m_questSystem.Update(1.0f / 60.0f, camPos, m_projectileSystem.GetProjectilesRef(), &m_particleSystem);
+    m_questSystem.Update(1.0f / 60.0f, camPos, m_projectileSystem.GetProjectilesRef());
 
     // 6. 파티클 이펙트 업데이트
     m_particleSystem.Update(1.0f / 60.0f);

@@ -26,8 +26,6 @@ struct AnimalTarget
     float rotationOffset;   // 회전 각도 (뜀뛰기 시 좌우 흔들림)
 };
 
-class ParticleSystem;
-
 class AnimalQuestSystem
 {
 public:
@@ -35,10 +33,10 @@ public:
     ~AnimalQuestSystem();
 
     void Initialize();
-    void Update(float dt, const DirectX::XMFLOAT3& playerPos, std::vector<HayProjectile>& projs, ParticleSystem* particleSys = nullptr);
+    void Update(float dt, const DirectX::XMFLOAT3& playerPos, std::vector<HayProjectile>& projs);
 
     // 플레이어 직접 상호작용 (E키로 가까이 있는 동물에게 먹이 주기)
-    bool TryFeedNearAnimal(const DirectX::XMFLOAT3& playerPos, std::string& outFedAnimalName, ParticleSystem* particleSys = nullptr);
+    bool TryFeedNearAnimal(const DirectX::XMFLOAT3& playerPos, std::string& outFedAnimalName);
 
     // 건초 줍기 처리
     bool TryPickupHay(const DirectX::XMFLOAT3& playerPos);

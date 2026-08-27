@@ -229,6 +229,8 @@
     <ClInclude Include="ProjectileSystem.h" />
     <ClInclude Include="AnimalQuestSystem.h" />
     <ClInclude Include="ParticleSystem.h" />
+    <ClInclude Include="Event.h" />
+    <ClInclude Include="EventBus.h" />
     <ClInclude Include="ResourceManager.h" />
     <ClInclude Include="RMModel.h" />
     <ClInclude Include="RMShader.h" />

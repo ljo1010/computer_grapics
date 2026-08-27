@@ -2,7 +2,8 @@
 // Filename: AnimalQuestSystem.cpp
 ////////////////////////////////////////////////////////////////////////////////
 #include "AnimalQuestSystem.h"
-#include "ParticleSystem.h"
+#include "Event.h"
+#include "EventBus.h"
 #include <cmath>
 #include <algorithm>
 
@@ -85,7 +86,7 @@ void AnimalQuestSystem::Initialize()
     m_completeCelebrationTimer = 0.0f;
 }
 
-void AnimalQuestSystem::Update(float dt, const DirectX::XMFLOAT3& playerPos, std::vector<HayProjectile>& projs, ParticleSystem* particleSys)
+void AnimalQuestSystem::Update(float dt, const DirectX::XMFLOAT3& playerPos, std::vector<HayProjectile>& projs)
 {
     // 1. 건초 리스폰 타이머 갱신
     if (!m_hayAvailable)
@@ -143,11 +144,9 @@ void AnimalQuestSystem::Update(float dt, const DirectX::XMFLOAT3& playerPos, std
                 m_fedCount++;
                 projHit = true;
 
-                // 머리 위 반짝이는 파티클 팝업!
-                if (particleSys)
-                {
-                    particleSys->SpawnFeedParticles(a.basePos, 24);
-                }
+                // [옵저버 패턴] 이벤트 발행: 동물 먹이 적중
+                bool isCompleted = (m_fedCount >= (int)m_animals.size());
+                EventBus::Get().Publish(AnimalFedEvent{ a.basePos, static_cast<int>(a.type), a.name, isCompleted });
                 break;
             }
         }
@@ -162,20 +161,16 @@ void AnimalQuestSystem::Update(float dt, const DirectX::XMFLOAT3& playerPos, std
     if (m_fedCount >= (int)m_animals.size() && !m_isCompleted)
     {
         m_isCompleted = true;
-        // 미션 완료 시 모든 동물이 일제히 축하 뜀뛰기 및 대량 파티클 분출!
+        // 미션 완료 시 모든 동물이 일제히 축하 뜀뛰기
         for (auto& a : m_animals)
         {
             a.hopTimer = 3.5f;
-            if (particleSys)
-            {
-                particleSys->SpawnFeedParticles(a.basePos, 32);
-            }
         }
     }
 }
 
 // 플레이어가 E키로 가까운 동물에게 직접 먹이를 줌
-bool AnimalQuestSystem::TryFeedNearAnimal(const DirectX::XMFLOAT3& playerPos, std::string& outFedAnimalName, ParticleSystem* particleSys)
+bool AnimalQuestSystem::TryFeedNearAnimal(const DirectX::XMFLOAT3& playerPos, std::string& outFedAnimalName)
 {
     if (m_ammoCount <= 0) return false;
 
@@ -198,24 +193,17 @@ bool AnimalQuestSystem::TryFeedNearAnimal(const DirectX::XMFLOAT3& playerPos, st
             m_fedCount++;
             outFedAnimalName = a.name;
 
-            // 반짝이는 파티클 방출!
-            if (particleSys)
-            {
-                particleSys->SpawnFeedParticles(a.basePos, 28);
-            }
-
             if (m_fedCount >= (int)m_animals.size())
             {
                 m_isCompleted = true;
                 for (auto& other : m_animals)
                 {
                     other.hopTimer = 3.5f;
-                    if (particleSys)
-                    {
-                        particleSys->SpawnFeedParticles(other.basePos, 32);
-                    }
                 }
             }
+
+            // [옵저버 패턴] 이벤트 발행: 먹이주기 성공
+            EventBus::Get().Publish(AnimalFedEvent{ a.basePos, static_cast<int>(a.type), a.name, m_isCompleted });
             return true;
         }
     }
@@ -272,6 +260,9 @@ void AnimalQuestSystem::ResetQuest()
     m_ammoCount = 1;
     m_hayAvailable = true;
     m_hayRespawnTimer = 0.0f;
+
+    // [옵저버 패턴] 이벤트 발행: 퀘스트 리셋
+    EventBus::Get().Publish(QuestResetEvent{});
 }
 
 const AnimalTarget* AnimalQuestSystem::GetAnimalByType(AnimalTarget::Type type) const

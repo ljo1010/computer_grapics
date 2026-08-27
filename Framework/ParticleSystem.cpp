@@ -1,4 +1,6 @@
 #include "ParticleSystem.h"
+#include "Event.h"
+#include "EventBus.h"
 #include <d3dcompiler.h>
 #include <random>
 #include <cmath>
@@ -21,6 +23,20 @@ bool ParticleSystem::Initialize(ID3D11Device* device, HWND hwnd, const std::wstr
     if (!InitializeShaders(device, hwnd, shaderFilename)) return false;
     if (!InitializeBuffers(device)) return false;
     if (!InitializeRenderStates(device)) return false;
+
+    // [옵저버 패턴] 이벤트 버스 구독
+    EventBus::Get().Subscribe<AnimalFedEvent>([this](const AnimalFedEvent& e) {
+        SpawnFeedParticles(e.position, e.isAllCompleted ? 32 : 24);
+    });
+
+    EventBus::Get().Subscribe<QuestResetEvent>([this](const QuestResetEvent& /*e*/) {
+        Clear();
+    });
+
+    EventBus::Get().Subscribe<HayImpactEvent>([this](const HayImpactEvent& e) {
+        SpawnHayImpact(e.position, 12);
+    });
+
     return true;
 }
 
@@ -39,6 +55,7 @@ void ParticleSystem::Shutdown()
     if (m_vertexShader) { m_vertexShader->Release(); m_vertexShader = nullptr; }
 
     m_particles.clear();
+    EventBus::Get().Clear();
 }
 
 bool ParticleSystem::InitializeShaders(ID3D11Device* device, HWND hwnd, const std::wstring& shaderFilename)
