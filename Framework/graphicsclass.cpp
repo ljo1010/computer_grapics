@@ -115,7 +115,7 @@ bool GraphicsClass::Initialize(int screenWidth, int screenHeight, HWND hwnd)
     m_soundManager.Initialize(hwnd);
 
     // ========== Water System (연못 수면 렌더링 시스템) ==========
-    if (!m_water.Initialize(m_D3D->GetDevice(), hwnd, 28.0f, 28.0f, 40))
+    if (!m_water.Initialize(m_D3D->GetDevice(), hwnd, 10.0f, 10.0f, 32))
     {
         MessageBox(hwnd, L"Could not initialize water system.", L"Error", MB_OK);
         return false;

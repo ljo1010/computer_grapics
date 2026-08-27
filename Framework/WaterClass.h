@@ -59,12 +59,12 @@ private:
 
     // 수면 제어 파라미터
     bool     m_enabled = true;
-    XMFLOAT3 m_position = XMFLOAT3(-9.0f, 0.15f, 6.0f); // 농장 내 아늑한 연못 기본 위치
+    XMFLOAT3 m_position = XMFLOAT3(-13.0f, 0.05f, 9.0f); // 풍차/헛간 사이 서쪽 아늑한 연못 위치
     float    m_scale = 1.0f;
     XMFLOAT4 m_deepColor = XMFLOAT4(0.03f, 0.22f, 0.35f, 1.0f);     // 짙고 맑은 에메랄드빛
     XMFLOAT4 m_shallowColor = XMFLOAT4(0.18f, 0.65f, 0.78f, 1.0f);  // 반짝이는 청록빛
     float    m_waveSpeed = 0.85f;
-    float    m_waveHeight = 0.08f;
-    float    m_waveFrequency = 1.1f;
-    float    m_waterAlpha = 0.78f;
+    float    m_waveHeight = 0.04f; // 아담한 연못에 어울리는 잔잔한 파고
+    float    m_waveFrequency = 1.5f;
+    float    m_waterAlpha = 0.82f;
 };

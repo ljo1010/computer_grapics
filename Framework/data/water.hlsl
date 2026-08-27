@@ -54,6 +54,7 @@ struct PixelInputType
     float2 tex1         : TEXCOORD1;
     float3 worldPos     : TEXCOORD2;
     float3 viewDir      : TEXCOORD3;
+    float2 baseUV       : TEXCOORD4;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -65,8 +66,7 @@ PixelInputType WaterVertexShader(VertexInputType input)
 
     input.position.w = 1.0f;
 
-    // 1. 절차적 정점 파동 변위 (Vertex Wave Displacement)
-    // 2방향 사인파 합성을 통해 3차원으로 출렁이는 수면 메쉬 표현
+    // 1. 절차적 정점 파도 변위 (Vertex Wave Displacement)
     float wave = sin(input.position.x * waveFrequency + gameTime * waveSpeed) * 
                  cos(input.position.z * waveFrequency * 0.8f + gameTime * waveSpeed * 0.7f);
     input.position.y += wave * waveHeight;
@@ -78,11 +78,14 @@ PixelInputType WaterVertexShader(VertexInputType input)
     output.position = mul(worldPos, viewMatrix);
     output.position = mul(output.position, projectionMatrix);
 
-    // 3. 듀얼 UV 스크롤링 (서로 다른 각도와 속도로 이동하는 텍스처 좌표)
-    output.tex0 = input.tex + float2(0.03f, 0.02f) * (gameTime * waveSpeed);
-    output.tex1 = input.tex * 1.6f - float2(0.02f, 0.035f) * (gameTime * waveSpeed);
+    // 3. 듀얼 UV 스크롤링
+    output.tex0 = input.tex * 2.0f + float2(0.03f, 0.02f) * (gameTime * waveSpeed);
+    output.tex1 = input.tex * 3.2f - float2(0.02f, 0.035f) * (gameTime * waveSpeed);
 
-    // 4. 시선 벡터 (카메라 방향)
+    // 4. 원형 마스킹용 기본 UV (0 ~ 1)
+    output.baseUV = input.tex;
+
+    // 5. 시선 벡터 (카메라 방향)
     output.viewDir = normalize(cameraPosition - worldPos.xyz);
 
     return output;
@@ -93,6 +96,19 @@ PixelInputType WaterVertexShader(VertexInputType input)
 ////////////////////////////////////////////////////////////////////////////////
 float4 WaterPixelShader(PixelInputType input) : SV_TARGET
 {
+    // [원형 연못 마스킹 및 가장자리 부드러운 페이드]
+    // 사각형 메쉬를 자연스러운 원형/타원형 연못으로 변환
+    float2 centerOffset = input.baseUV - float2(0.5f, 0.5f);
+    float radialDist = length(centerOffset) * 2.0f; // 중심 0.0 ~ 외곽 1.0
+
+    if (radialDist > 1.0f)
+    {
+        discard; // 사각형 외곽 영역은 잘라냄
+    }
+
+    // 외곽으로 갈수록 알파가 부드럽게 빠져 흙바닥과 자연스럽게 블렌딩
+    float edgeFade = saturate((1.0f - radialDist) * 3.5f);
+
     // 1. 듀얼 노멀맵 샘플링 및 언팩 ([0, 1] -> [-1, 1])
     float4 normalMap0 = normalTexture.Sample(sampleType, input.tex0);
     float4 normalMap1 = normalTexture.Sample(sampleType, input.tex1);
@@ -109,7 +125,6 @@ float4 WaterPixelShader(PixelInputType input) : SV_TARGET
     float3 N = blendedNormal;
 
     // 2. 슈릭(Schlick) 프레넬 반사율 연산
-    // 물의 기본 반사율 R0 = ((1.333 - 1.0) / (1.333 + 1.0))^2 ≈ 0.02
     float R0 = 0.05f;
     float NdotV = saturate(dot(N, V));
     float fresnel = R0 + (1.0f - R0) * pow(1.0f - NdotV, 4.0f);
@@ -136,5 +151,5 @@ float4 WaterPixelShader(PixelInputType input) : SV_TARGET
         finalColor = lerp(finalColor, fogColor.rgb, fogFactor);
     }
 
-    return float4(finalColor, waterAlpha);
+    return float4(finalColor, waterAlpha * edgeFade);
 }
