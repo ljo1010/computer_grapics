@@ -749,12 +749,13 @@ void GraphicsClass::ExecuteParticlePass(const RenderContext& ctx)
 }
 
 //////////////////////////////////////////////////////////////////
-// [Pass 9] Post-Processing Pass (HDR 블룸 + ACES 톤매핑 + 비네팅)
+// [Pass 9] Post-Processing Pass (HDR 블룸 + 갓 레이 + ACES 톤매핑 + 비네팅)
 //////////////////////////////////////////////////////////////////
-void GraphicsClass::ExecutePostProcessPass()
+void GraphicsClass::ExecutePostProcessPass(const RenderContext& ctx)
 {
     m_D3D->TurnZBufferOff();
     m_D3D->TurnOffAlphaBlending();
+    m_postProcess.UpdateSun(m_lightManager.GetDirection(), ctx.viewMatrix, ctx.projectionMatrix, ctx.cameraPosition);
     m_postProcess.Render(m_D3D->GetDeviceContext(), m_D3D->GetRenderTargetView());
     m_D3D->TurnZBufferOn();
 }
@@ -801,8 +802,8 @@ bool GraphicsClass::Render()
     // 9. [Pass 8: Particle Billboard Pass] 동물 먹이 반응 절차적 별빛 파티클 렌더링
     ExecuteParticlePass(ctx);
 
-    // 10. [Pass 9: Post-Processing Pass] HDR 블룸 + ACES 톤매핑 + 비네팅 -> 백버퍼 합성!
-    ExecutePostProcessPass();
+    // 10. [Pass 9: Post-Processing Pass] HDR 블룸 + 갓 레이 + ACES 톤매핑 + 비네팅 -> 백버퍼 합성!
+    ExecutePostProcessPass(ctx);
 
     // 11. [Pass 10: UI & ImGui Debug Pass] 인게임 퀘스트 HUD 및 실시간 디버그 패널 (백버퍼 위)
     ExecuteUIPass(ctx);
@@ -1265,11 +1266,28 @@ void GraphicsClass::RenderImGui()
             // ------------------------------------------------------------
             if (ImGui::CollapsingHeader(u8"포스트 프로세싱 (Post-Processing)", ImGuiTreeNodeFlags_DefaultOpen))
             {
+                // 블룸 제어
                 ImGui::Checkbox(u8"블룸 효과 (Bloom Effect)", &m_postProcess.GetBloomEnabled());
                 if (m_postProcess.GetBloomEnabled())
                 {
                     ImGui::SliderFloat(u8"블룸 강도 (Intensity)", &m_postProcess.GetBloomIntensity(), 0.0f, 2.5f, "%.2f");
                     ImGui::SliderFloat(u8"블룸 임계값 (Threshold)", &m_postProcess.GetBloomThreshold(), 0.3f, 1.5f, "%.2f");
+                }
+
+                // 갓 레이 (God Rays / Volumetric Sun Shafts) 제어
+                ImGui::Checkbox(u8"갓 레이 빛줄기 (God Rays Effect)", &m_postProcess.GetGodRaysEnabled());
+                if (m_postProcess.GetGodRaysEnabled())
+                {
+                    ImGui::SliderFloat(u8"빛줄기 강도 (Ray Intensity)", &m_postProcess.GetRayIntensity(), 0.0f, 3.0f, "%.2f");
+                    ImGui::SliderFloat(u8"빛줄기 감쇠율 (Decay)", &m_postProcess.GetRayDecay(), 0.85f, 0.99f, "%.3f");
+                    ImGui::SliderFloat(u8"빛줄기 확산/밀도 (Density)", &m_postProcess.GetRayDensity(), 0.2f, 1.5f, "%.2f");
+
+                    XMFLOAT4& rayCol = m_postProcess.GetRayColor();
+                    float rayColArr[3] = { rayCol.x, rayCol.y, rayCol.z };
+                    if (ImGui::ColorEdit3(u8"빛줄기 색상 (Ray Color)", rayColArr))
+                    {
+                        rayCol = XMFLOAT4(rayColArr[0], rayColArr[1], rayColArr[2], 1.0f);
+                    }
                 }
 
                 ImGui::Checkbox(u8"ACES 톤매핑 (ACES Film Tonemap)", &m_postProcess.GetTonemapEnabled());

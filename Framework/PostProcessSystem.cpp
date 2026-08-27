@@ -1,4 +1,5 @@
 #include "PostProcessSystem.h"
+#include <algorithm>
 
 PostProcessSystem::PostProcessSystem()
 {
@@ -86,10 +87,14 @@ bool PostProcessSystem::CreateRenderTargets(ID3D11Device* device)
     // 1. 풀해상도 메인 씬 HDR RTV
     if (!makeRTV(m_screenWidth, m_screenHeight, &m_sceneTexture, &m_sceneRTV, &m_sceneSRV)) return false;
 
-    // 2. 하프해상도 Bright Pass 및 블러 RTV들
+    // 2. 하프해상도 블룸용 RTV들
     if (!makeRTV(m_downWidth, m_downHeight, &m_brightTexture, &m_brightRTV, &m_brightSRV)) return false;
     if (!makeRTV(m_downWidth, m_downHeight, &m_blurTextureX, &m_blurRTV_X, &m_blurSRV_X)) return false;
     if (!makeRTV(m_downWidth, m_downHeight, &m_blurTextureY, &m_blurRTV_Y, &m_blurSRV_Y)) return false;
+
+    // 3. 하프해상도 갓 레이용 RTV들
+    if (!makeRTV(m_downWidth, m_downHeight, &m_rayOcclusionTexture, &m_rayOcclusionRTV, &m_rayOcclusionSRV)) return false;
+    if (!makeRTV(m_downWidth, m_downHeight, &m_rayRadialTexture, &m_rayRadialRTV, &m_rayRadialSRV)) return false;
 
     return true;
 }
@@ -122,15 +127,22 @@ bool PostProcessSystem::CreateShaders(ID3D11Device* device, HWND hwnd)
     if (!compilePS("BrightPassPS", &m_brightPassPS)) return false;
     if (!compilePS("BlurHorizontalPS", &m_blurHorizontalPS)) return false;
     if (!compilePS("BlurVerticalPS", &m_blurVerticalPS)) return false;
+    if (!compilePS("SunOcclusionPS", &m_sunOcclusionPS)) return false;
+    if (!compilePS("RadialBlurRayPS", &m_radialBlurRayPS)) return false;
     if (!compilePS("CompositePS", &m_compositePS)) return false;
 
-    // 상수 버퍼 생성
+    // 상수 버퍼 0: PostProcessBuffer
     D3D11_BUFFER_DESC cbDesc{};
     cbDesc.Usage = D3D11_USAGE_DYNAMIC;
     cbDesc.ByteWidth = sizeof(PostProcessBufferType);
     cbDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     cbDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-    hr = device->CreateBuffer(&cbDesc, NULL, &m_constantBuffer);
+    hr = device->CreateBuffer(&cbDesc, NULL, &m_postProcessBuffer);
+    if (FAILED(hr)) return false;
+
+    // 상수 버퍼 1: GodRaysBuffer
+    cbDesc.ByteWidth = sizeof(GodRaysBufferType);
+    hr = device->CreateBuffer(&cbDesc, NULL, &m_godRaysBuffer);
     if (FAILED(hr)) return false;
 
     // 샘플러 생성 (Linear Clamp)
@@ -150,13 +162,24 @@ bool PostProcessSystem::CreateShaders(ID3D11Device* device, HWND hwnd)
 void PostProcessSystem::Shutdown()
 {
     if (m_samplerClamp) { m_samplerClamp->Release(); m_samplerClamp = nullptr; }
-    if (m_constantBuffer) { m_constantBuffer->Release(); m_constantBuffer = nullptr; }
+    if (m_godRaysBuffer) { m_godRaysBuffer->Release(); m_godRaysBuffer = nullptr; }
+    if (m_postProcessBuffer) { m_postProcessBuffer->Release(); m_postProcessBuffer = nullptr; }
 
     if (m_compositePS) { m_compositePS->Release(); m_compositePS = nullptr; }
+    if (m_radialBlurRayPS) { m_radialBlurRayPS->Release(); m_radialBlurRayPS = nullptr; }
+    if (m_sunOcclusionPS) { m_sunOcclusionPS->Release(); m_sunOcclusionPS = nullptr; }
     if (m_blurVerticalPS) { m_blurVerticalPS->Release(); m_blurVerticalPS = nullptr; }
     if (m_blurHorizontalPS) { m_blurHorizontalPS->Release(); m_blurHorizontalPS = nullptr; }
     if (m_brightPassPS) { m_brightPassPS->Release(); m_brightPassPS = nullptr; }
     if (m_fullScreenVS) { m_fullScreenVS->Release(); m_fullScreenVS = nullptr; }
+
+    if (m_rayRadialSRV) { m_rayRadialSRV->Release(); m_rayRadialSRV = nullptr; }
+    if (m_rayRadialRTV) { m_rayRadialRTV->Release(); m_rayRadialRTV = nullptr; }
+    if (m_rayRadialTexture) { m_rayRadialTexture->Release(); m_rayRadialTexture = nullptr; }
+
+    if (m_rayOcclusionSRV) { m_rayOcclusionSRV->Release(); m_rayOcclusionSRV = nullptr; }
+    if (m_rayOcclusionRTV) { m_rayOcclusionRTV->Release(); m_rayOcclusionRTV = nullptr; }
+    if (m_rayOcclusionTexture) { m_rayOcclusionTexture->Release(); m_rayOcclusionTexture = nullptr; }
 
     if (m_blurSRV_Y) { m_blurSRV_Y->Release(); m_blurSRV_Y = nullptr; }
     if (m_blurRTV_Y) { m_blurRTV_Y->Release(); m_blurRTV_Y = nullptr; }
@@ -185,6 +208,51 @@ void PostProcessSystem::BindSceneRenderTarget(ID3D11DeviceContext* dc, ID3D11Dep
     dc->RSSetViewports(1, &m_screenViewport);
 }
 
+void PostProcessSystem::UpdateSun(XMFLOAT3 sunDirection, const XMMATRIX& view, const XMMATRIX& proj, XMFLOAT3 camPos)
+{
+    // 태양의 방향 벡터 (빛 방향의 반대)
+    XMVECTOR sunDir = XMVector3Normalize(XMVectorSet(-sunDirection.x, -sunDirection.y, -sunDirection.z, 0.0f));
+
+    // 태양 월드 위치 (카메라에서 800m 원경)
+    XMVECTOR camPosVec = XMLoadFloat3(&camPos);
+    XMVECTOR sunWorldPos = camPosVec + sunDir * 800.0f;
+
+    // 뷰-투영 변환으로 클립 좌표 산출
+    XMMATRIX viewProj = view * proj;
+    XMVECTOR sunClip = XMVector3Transform(sunWorldPos, viewProj);
+
+    XMFLOAT4 clip;
+    XMStoreFloat4(&clip, sunClip);
+
+    if (clip.w > 0.1f) // 카메라 전방에 위치
+    {
+        float ndcX = clip.x / clip.w;
+        float ndcY = clip.y / clip.w;
+
+        m_sunScreenPos.x = ndcX * 0.5f + 0.5f;
+        m_sunScreenPos.y = -ndcY * 0.5f + 0.5f;
+
+        // 화면 밖으로 벗어날 때 부드러운 페이드아웃
+        float minX = (m_sunScreenPos.x < 1.0f - m_sunScreenPos.x) ? m_sunScreenPos.x : (1.0f - m_sunScreenPos.x);
+        float minY = (m_sunScreenPos.y < 1.0f - m_sunScreenPos.y) ? m_sunScreenPos.y : (1.0f - m_sunScreenPos.y);
+        float edgeDist = (minX < minY) ? minX : minY;
+
+        if (edgeDist < 0.0f)
+        {
+            float vis = 1.0f + edgeDist * 3.0f;
+            m_sunVisibility = (vis > 0.0f) ? vis : 0.0f;
+        }
+        else
+        {
+            m_sunVisibility = 1.0f;
+        }
+    }
+    else
+    {
+        m_sunVisibility = 0.0f; // 카메라 뒤에 위치
+    }
+}
+
 void PostProcessSystem::RenderFullScreenQuad(ID3D11DeviceContext* dc)
 {
     dc->IASetInputLayout(nullptr);
@@ -198,8 +266,9 @@ void PostProcessSystem::RenderFullScreenQuad(ID3D11DeviceContext* dc)
 
 void PostProcessSystem::Render(ID3D11DeviceContext* dc, ID3D11RenderTargetView* backBufferRTV)
 {
+    // 1. PostProcessBuffer 업데이트
     D3D11_MAPPED_SUBRESOURCE mapped;
-    if (SUCCEEDED(dc->Map(m_constantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
+    if (SUCCEEDED(dc->Map(m_postProcessBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
     {
         PostProcessBufferType* p = (PostProcessBufferType*)mapped.pData;
         p->screenSize = XMFLOAT2((float)m_downWidth, (float)m_downHeight);
@@ -209,19 +278,35 @@ void PostProcessSystem::Render(ID3D11DeviceContext* dc, ID3D11RenderTargetView* 
         p->enableTonemap = m_enableTonemap ? 1 : 0;
         p->vignetteIntensity = m_vignetteIntensity;
         p->exposure = m_exposure;
-        dc->Unmap(m_constantBuffer, 0);
+        dc->Unmap(m_postProcessBuffer, 0);
     }
 
-    dc->PSSetConstantBuffers(0, 1, &m_constantBuffer);
+    // 2. GodRaysBuffer 업데이트
+    if (SUCCEEDED(dc->Map(m_godRaysBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
+    {
+        GodRaysBufferType* g = (GodRaysBufferType*)mapped.pData;
+        g->sunScreenPos = m_sunScreenPos;
+        g->sunVisibility = m_sunVisibility;
+        g->rayIntensity = m_rayIntensity;
+        g->rayDecay = m_rayDecay;
+        g->rayDensity = m_rayDensity;
+        g->rayWeight = m_rayWeight;
+        g->enableGodRays = m_enableGodRays ? 1 : 0;
+        g->rayColor = m_rayColor;
+        dc->Unmap(m_godRaysBuffer, 0);
+    }
+
+    dc->PSSetConstantBuffers(0, 1, &m_postProcessBuffer);
+    dc->PSSetConstantBuffers(1, 1, &m_godRaysBuffer);
     dc->PSSetSamplers(0, 1, &m_samplerClamp);
 
-    ID3D11ShaderResourceView* nullSRV[2] = { nullptr, nullptr };
+    ID3D11ShaderResourceView* nullSRV[4] = { nullptr, nullptr, nullptr, nullptr };
 
+    // ------------------------------------------------------------
+    // [Pass 1] 블룸(Bloom) 계산
+    // ------------------------------------------------------------
     if (m_enableBloom)
     {
-        // ------------------------------------------------------------
-        // Pass 1: Bright Pass (고휘도 영역 추출)
-        // ------------------------------------------------------------
         dc->OMSetRenderTargets(1, &m_brightRTV, nullptr);
         dc->RSSetViewports(1, &m_downsampleViewport);
         dc->PSSetShaderResources(0, 1, &m_sceneSRV);
@@ -229,18 +314,12 @@ void PostProcessSystem::Render(ID3D11DeviceContext* dc, ID3D11RenderTargetView* 
         RenderFullScreenQuad(dc);
         dc->PSSetShaderResources(0, 1, nullSRV);
 
-        // ------------------------------------------------------------
-        // Pass 2: Blur Horizontal
-        // ------------------------------------------------------------
         dc->OMSetRenderTargets(1, &m_blurRTV_X, nullptr);
         dc->PSSetShaderResources(0, 1, &m_brightSRV);
         dc->PSSetShader(m_blurHorizontalPS, nullptr, 0);
         RenderFullScreenQuad(dc);
         dc->PSSetShaderResources(0, 1, nullSRV);
 
-        // ------------------------------------------------------------
-        // Pass 3: Blur Vertical
-        // ------------------------------------------------------------
         dc->OMSetRenderTargets(1, &m_blurRTV_Y, nullptr);
         dc->PSSetShaderResources(0, 1, &m_blurSRV_X);
         dc->PSSetShader(m_blurVerticalPS, nullptr, 0);
@@ -249,17 +328,41 @@ void PostProcessSystem::Render(ID3D11DeviceContext* dc, ID3D11RenderTargetView* 
     }
 
     // ------------------------------------------------------------
-    // Pass 4: Composite + Tone Mapping + Vignette -> 백버퍼 출력
+    // [Pass 2] 갓 레이 (God Rays / Volumetric Sun Shafts) 계산
+    // ------------------------------------------------------------
+    if (m_enableGodRays && m_sunVisibility > 0.01f)
+    {
+        // 2-1. 태양 오클루전 마스크 추출
+        dc->OMSetRenderTargets(1, &m_rayOcclusionRTV, nullptr);
+        dc->RSSetViewports(1, &m_downsampleViewport);
+        dc->PSSetShaderResources(0, 1, &m_sceneSRV);
+        dc->PSSetShader(m_sunOcclusionPS, nullptr, 0);
+        RenderFullScreenQuad(dc);
+        dc->PSSetShaderResources(0, 1, nullSRV);
+
+        // 2-2. 36-Tap 스크린 스페이스 방사형 블러로 빛줄기 생성
+        dc->OMSetRenderTargets(1, &m_rayRadialRTV, nullptr);
+        dc->PSSetShaderResources(0, 1, &m_rayOcclusionSRV);
+        dc->PSSetShader(m_radialBlurRayPS, nullptr, 0);
+        RenderFullScreenQuad(dc);
+        dc->PSSetShaderResources(0, 1, nullSRV);
+    }
+
+    // ------------------------------------------------------------
+    // [Pass 3] 최종 합성: 씬 + 갓 레이 + 블룸 + 톤매핑 + 비네팅 -> 백버퍼
     // ------------------------------------------------------------
     dc->OMSetRenderTargets(1, &backBufferRTV, nullptr);
     dc->RSSetViewports(1, &m_screenViewport);
 
-    ID3D11ShaderResourceView* srvs[2] = { m_sceneSRV, m_enableBloom ? m_blurSRV_Y : nullptr };
-    dc->PSSetShaderResources(0, 2, srvs);
+    ID3D11ShaderResourceView* srvs[3] = {
+        m_sceneSRV,
+        m_enableBloom ? m_blurSRV_Y : nullptr,
+        (m_enableGodRays && m_sunVisibility > 0.01f) ? m_rayRadialSRV : nullptr
+    };
+    dc->PSSetShaderResources(0, 3, srvs);
     dc->PSSetShader(m_compositePS, nullptr, 0);
 
     RenderFullScreenQuad(dc);
 
-    // 언바인드
-    dc->PSSetShaderResources(0, 2, nullSRV);
+    dc->PSSetShaderResources(0, 3, nullSRV);
 }

@@ -81,11 +81,11 @@ DirectX 11 및 C++ 기반으로 제작된 실시간 3D 그래픽스 및 게임�
    - 슈릭(Schlick) 프레넬 반사율 계산으로 시선 각도에 따른 깊은 에메랄드 물빛과 얕은 반사광 보간
    - 블린-퐁 스페큘러 태양광 반짝임(Glitter) 및 거리 안개 융합, ImGui 실시간 파라미터(위치, 크기, 파도, 색상) 튜닝
 
-10. HDR 포스트 프로세싱 파이프라인 (HDR Post-Processing Pipeline)
+10. HDR 포스트 프로세싱 & 갓 레이 파이프라인 (Post-Processing & Volumetric God Rays)
+   - 스크린 스페이스 36-Tap 방사형 블러(Radial Blur) 기반 볼류메트릭 갓 레이(God Rays / Sun Shafts) 빛기둥 연출
+   - 태양 3D 월드 좌표의 실시간 2D 화면 투영 및 건물/풍차/나무 실루엣 오클루전 마스크 분리
    - 오프스크린 HDR 렌더 타겟 기반 고휘도 추출(Bright Pass) 및 2패스 9-Tap 분리 가우시안 블러(Separable Gaussian Blur)
-   - 태양광, 수면 하이라이트, 별빛 파티클이 화사하게 번지는 시네마틱 블룸(Bloom) 연출
-   - 영화 산업 표준 ACES Film 톤매핑, 감성적 비네팅(Vignette), sRGB 감마 2.2 보정
-   - 풀스크린 트라이앵글 기법(정점 버퍼 없이 SV_VertexID 사용)으로 GPU 최적화 및 ImGui 실시간 파라미터 제어 지원
+   - 영화 산업 표준 ACES Film 톤매핑, 감성적 비네팅(Vignette), ImGui 실시간 파라미터(강도, 감쇠, 색상) 제어
 
 ---
 

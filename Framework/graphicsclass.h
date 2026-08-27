@@ -108,7 +108,7 @@ private:
     void ExecuteSkinnedPass(const RenderContext& ctx);
     void ExecuteWaterPass(const RenderContext& ctx);
     void ExecuteParticlePass(const RenderContext& ctx);
-    void ExecutePostProcessPass();
+    void ExecutePostProcessPass(const RenderContext& ctx);
     void ExecuteUIPass(const RenderContext& ctx);
 
     // Scene state
