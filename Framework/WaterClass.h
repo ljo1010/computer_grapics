@@ -59,7 +59,7 @@ private:
 
     // 수면 제어 파라미터
     bool     m_enabled = true;
-    XMFLOAT3 m_position = XMFLOAT3(-13.0f, 0.05f, 9.0f); // 풍차/헛간 사이 서쪽 아늑한 연못 위치
+    XMFLOAT3 m_position = XMFLOAT3(-14.0f, 0.05f, 9.0f); // 서쪽 아늑한 연못 최적 위치
     float    m_scale = 1.0f;
     XMFLOAT4 m_deepColor = XMFLOAT4(0.04f, 0.30f, 0.44f, 1.0f);     // 맑고 시원한 깊은 에메랄드빛
     XMFLOAT4 m_shallowColor = XMFLOAT4(0.28f, 0.76f, 0.88f, 1.0f);  // 햇빛을 머금은 밝고 영롱한 청록빛
