@@ -184,6 +184,7 @@
     <ClCompile Include="SoundManager.cpp" />
     <ClCompile Include="WaterClass.cpp" />
     <ClCompile Include="WaterShaderClass.cpp" />
+    <ClCompile Include="PostProcessSystem.cpp" />
     <ClCompile Include="SkinModel.cpp" />
     <ClCompile Include="SkinShaderClass.cpp" />
     <ClCompile Include="Skybox.cpp" />
@@ -237,6 +238,7 @@
     <ClInclude Include="SoundManager.h" />
     <ClInclude Include="WaterClass.h" />
     <ClInclude Include="WaterShaderClass.h" />
+    <ClInclude Include="PostProcessSystem.h" />
     <ClInclude Include="RenderContext.h" />
     <ClInclude Include="IRenderPass.h" />
     <ClInclude Include="Event.h" />

@@ -121,6 +121,13 @@ bool GraphicsClass::Initialize(int screenWidth, int screenHeight, HWND hwnd)
         return false;
     }
 
+    // ========== Post-Processing System (블룸, ACES 톤매핑, 비네팅) ==========
+    if (!m_postProcess.Initialize(m_D3D->GetDevice(), hwnd, screenWidth, screenHeight))
+    {
+        MessageBox(hwnd, L"Could not initialize post-process system.", L"Error", MB_OK);
+        return false;
+    }
+
     // ========== UI ==========
     m_Bitmap = std::make_unique<BitmapClass>();
     if (!m_Bitmap) return false;
@@ -182,6 +189,7 @@ void GraphicsClass::Shutdown()
     ShutdownImGui();
 
     m_soundManager.Shutdown();
+    m_postProcess.Shutdown();
     m_water.Shutdown();
     m_particleSystem.Shutdown();
 
@@ -741,7 +749,18 @@ void GraphicsClass::ExecuteParticlePass(const RenderContext& ctx)
 }
 
 //////////////////////////////////////////////////////////////////
-// [Pass 9] UI & ImGui Pass (2D HUD 및 디버그 패널)
+// [Pass 9] Post-Processing Pass (HDR 블룸 + ACES 톤매핑 + 비네팅)
+//////////////////////////////////////////////////////////////////
+void GraphicsClass::ExecutePostProcessPass()
+{
+    m_D3D->TurnZBufferOff();
+    m_D3D->TurnOffAlphaBlending();
+    m_postProcess.Render(m_D3D->GetDeviceContext(), m_D3D->GetRenderTargetView());
+    m_D3D->TurnZBufferOn();
+}
+
+//////////////////////////////////////////////////////////////////
+// [Pass 10] UI & ImGui Pass (2D HUD 및 디버그 패널)
 //////////////////////////////////////////////////////////////////
 void GraphicsClass::ExecuteUIPass(const RenderContext& ctx)
 {
@@ -757,8 +776,8 @@ bool GraphicsClass::Render()
     // 1. [Pass 1: Depth Shadow Pass] 광원 시점 섀도우 맵 깊이 버퍼 기록
     ExecuteShadowPass();
 
-    // 2. 메인 백버퍼 클리어 및 프레임 렌더 컨텍스트 생성
-    m_D3D->BeginScene(0.0f, 0.0f, 0.0f, 1.0f);
+    // 2. 오프스크린 HDR 렌더 타겟 바인딩 및 씬 클리어
+    m_postProcess.BindSceneRenderTarget(m_D3D->GetDeviceContext(), m_D3D->GetDepthStencilView());
     RenderContext ctx = BuildRenderContext();
 
     // 3. [Pass 2: Skybox Pass] 대기 및 하늘 배경 렌더링
@@ -782,7 +801,10 @@ bool GraphicsClass::Render()
     // 9. [Pass 8: Particle Billboard Pass] 동물 먹이 반응 절차적 별빛 파티클 렌더링
     ExecuteParticlePass(ctx);
 
-    // 10. [Pass 9: UI & ImGui Debug Pass] 인게임 퀘스트 HUD 및 실시간 디버그 패널
+    // 10. [Pass 9: Post-Processing Pass] HDR 블룸 + ACES 톤매핑 + 비네팅 -> 백버퍼 합성!
+    ExecutePostProcessPass();
+
+    // 11. [Pass 10: UI & ImGui Debug Pass] 인게임 퀘스트 HUD 및 실시간 디버그 패널 (백버퍼 위)
     ExecuteUIPass(ctx);
 
     m_D3D->EndScene();
@@ -1239,7 +1261,26 @@ void GraphicsClass::RenderImGui()
             }
 
             // ------------------------------------------------------------
-            // 9. 단축키 안내
+            // 9. 포스트 프로세싱 (Post-Processing - Bloom & Tone Mapping)
+            // ------------------------------------------------------------
+            if (ImGui::CollapsingHeader(u8"포스트 프로세싱 (Post-Processing)", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                ImGui::Checkbox(u8"블룸 효과 (Bloom Effect)", &m_postProcess.GetBloomEnabled());
+                if (m_postProcess.GetBloomEnabled())
+                {
+                    ImGui::SliderFloat(u8"블룸 강도 (Intensity)", &m_postProcess.GetBloomIntensity(), 0.0f, 2.5f, "%.2f");
+                    ImGui::SliderFloat(u8"블룸 임계값 (Threshold)", &m_postProcess.GetBloomThreshold(), 0.3f, 1.5f, "%.2f");
+                }
+
+                ImGui::Checkbox(u8"ACES 톤매핑 (ACES Film Tonemap)", &m_postProcess.GetTonemapEnabled());
+                ImGui::SliderFloat(u8"비네팅 강도 (Vignette)", &m_postProcess.GetVignetteIntensity(), 0.0f, 1.0f, "%.2f");
+                ImGui::SliderFloat(u8"노출도 (Exposure)", &m_postProcess.GetExposure(), 0.5f, 2.0f, "%.2f");
+
+                ImGui::Separator();
+            }
+
+            // ------------------------------------------------------------
+            // 10. 단축키 안내
             // ------------------------------------------------------------
             ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), u8"[Tab/F1]: 커서 해제  [M]: 음소거 토글");
         }

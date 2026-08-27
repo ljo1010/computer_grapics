@@ -45,6 +45,7 @@ using namespace DirectX;
 #include "ParticleSystem.h"
 #include "SoundManager.h"
 #include "WaterClass.h"
+#include "PostProcessSystem.h"
 #include "RenderContext.h"
 
 /////////////
@@ -107,6 +108,7 @@ private:
     void ExecuteSkinnedPass(const RenderContext& ctx);
     void ExecuteWaterPass(const RenderContext& ctx);
     void ExecuteParticlePass(const RenderContext& ctx);
+    void ExecutePostProcessPass();
     void ExecuteUIPass(const RenderContext& ctx);
 
     // Scene state
@@ -127,6 +129,7 @@ private:
     ParticleSystem m_particleSystem;
     SoundManager m_soundManager;
     WaterClass m_water;
+    PostProcessSystem m_postProcess;
 
     float m_gameTime = 0.0f;
 

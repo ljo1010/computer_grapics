@@ -81,6 +81,12 @@ DirectX 11 및 C++ 기반으로 제작된 실시간 3D 그래픽스 및 게임�
    - 슈릭(Schlick) 프레넬 반사율 계산으로 시선 각도에 따른 깊은 에메랄드 물빛과 얕은 반사광 보간
    - 블린-퐁 스페큘러 태양광 반짝임(Glitter) 및 거리 안개 융합, ImGui 실시간 파라미터(위치, 크기, 파도, 색상) 튜닝
 
+10. HDR 포스트 프로세싱 파이프라인 (HDR Post-Processing Pipeline)
+   - 오프스크린 HDR 렌더 타겟 기반 고휘도 추출(Bright Pass) 및 2패스 9-Tap 분리 가우시안 블러(Separable Gaussian Blur)
+   - 태양광, 수면 하이라이트, 별빛 파티클이 화사하게 번지는 시네마틱 블룸(Bloom) 연출
+   - 영화 산업 표준 ACES Film 톤매핑, 감성적 비네팅(Vignette), sRGB 감마 2.2 보정
+   - 풀스크린 트라이앵글 기법(정점 버퍼 없이 SV_VertexID 사용)으로 GPU 최적화 및 ImGui 실시간 파라미터 제어 지원
+
 ---
 
 ## 2. 핵심 소스 코드 가이드 (중점적으로 보아야 할 파일)
@@ -105,6 +111,12 @@ DirectX 11 및 C++ 기반으로 제작된 실시간 3D 그래픽스 및 게임�
 
 - Framework/WaterClass.h / .cpp, WaterShaderClass.h / .cpp
   - 40x40 세분화 그리드 버퍼를 생성하고 파라미터를 바인딩하여 3차원 출렁이는 연못 수면을 렌더링하는 클래스입니다.
+
+- Framework/data/postprocess.hlsl
+  - 풀스크린 트라이앵글 정점 셰이더, 고휘도 추출, 가우시안 블러, ACES 필름 톤매핑 및 비네팅을 연산하는 후처리 셰이더입니다.
+
+- Framework/PostProcessSystem.h / .cpp
+  - HDR 오프스크린 렌더 타겟 관리, 블룸 핑퐁 블러링, ACES 톤매핑 후처리를 총괄하는 시스템 클래스입니다.
 
 - Framework/ShadowMapClass.h / .cpp
   - 2048 x 2048 해상도의 D32_FLOAT 뎁스 렌더 타겟 및 셰이더 리소스 뷰(SRV) 생성/바인딩 클래스입니다.
